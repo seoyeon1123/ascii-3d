@@ -45,7 +45,7 @@ body {
 .hud { position: absolute; pointer-events: none; display: flex; flex-direction: column; gap: 4px; }
 .hud.tl { top: 18px; left: 20px; }
 .hud.tr { top: 20px; right: 20px; align-items: flex-end; text-align: right; }
-.hud.bl { bottom: 16px; left: 20px; right: 20px; }
+.hud.tl .hint { margin-top: 4px; }
 .mark { display: flex; align-items: baseline; gap: 10px; }
 .mark b { font-family: var(--font-display); font-weight: 800; font-size: 26px; font-stretch: 112.5%; letter-spacing: -0.02em; color: var(--accent); line-height: 1; }
 .mark span { font-weight: 700; font-size: var(--s-4); letter-spacing: -0.01em; }
@@ -58,8 +58,34 @@ body {
   font-size: var(--s-3); pointer-events: none;
 }
 .drop.on { display: grid; }
-.busy { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-family: var(--font-display); color: var(--muted); font-size: var(--s-1); display: none; }
-.busy.on { display: block; }
+.busy { position: absolute; inset: 0; display: none; place-items: center; background: color-mix(in srgb, var(--bg) 55%, transparent); }
+.busy.on { display: grid; }
+.busy-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; width: min(280px, calc(100% - 32px)); display: flex; flex-direction: column; gap: 10px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3); }
+.busy-title { font-weight: 700; font-size: var(--s-3); }
+.busy-bar { height: 4px; background: var(--line); border-radius: 4px; overflow: hidden; }
+.busy-bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
+.busy-step { font-family: var(--font-display); font-size: var(--s-1); color: var(--muted); font-variant-numeric: tabular-nums; font-stretch: 87.5%; }
+.dock-wrap { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: calc(100% - 32px); }
+.dock {
+  display: flex; align-items: center; gap: 4px; padding: 5px; border-radius: 14px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--line);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+}
+.dock-btn {
+  font: inherit; font-weight: 700; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 10px;
+  padding: 9px 14px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; cursor: pointer; white-space: nowrap;
+  min-width: 82px; font-variant-numeric: tabular-nums;
+}
+.dock-btn svg { width: 16px; height: 16px; flex: none; }
+.dock-btn:hover { background: color-mix(in srgb, var(--text) 9%, transparent); }
+.dock-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dock-btn.primary { background: var(--accent); color: #1b1220; padding: 9px 18px; }
+.dock-btn.primary:hover { background: color-mix(in srgb, var(--accent) 86%, #fff); }
+.dock-btn:disabled { opacity: 0.55; cursor: progress; }
+.dock-sep { width: 1px; height: 22px; background: var(--line); margin: 0 3px; }
+.dock-hint { color: var(--muted); font-size: var(--s-1); text-align: center; }
+.dock-btn.pulse { animation: pulse 1s ease-out 3; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 75%, transparent); } 100% { box-shadow: 0 0 0 12px transparent; } }
 
 .rail {
   background: var(--surface); border-left: 1px solid var(--line);
@@ -105,7 +131,7 @@ input[type="range"]:disabled { opacity: 0.4; }
 .btn:disabled { opacity: 0.5; cursor: progress; }
 .note { color: var(--muted); font-size: var(--s-1); margin: 0; }
 .toast {
-  position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 20px); opacity: 0;
+  position: absolute; left: 50%; bottom: 112px; transform: translate(-50%, 12px); opacity: 0; white-space: nowrap;
   background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: var(--s-2);
   transition: opacity .2s, transform .2s; pointer-events: none; z-index: 20; max-width: calc(100% - 32px);
 }
@@ -124,11 +150,15 @@ input[type="range"]:disabled { opacity: 0.4; }
 @media (max-width: 760px) {
   body { grid-template-columns: 1fr; grid-template-rows: minmax(360px, 64vh) auto; overflow: auto; height: auto; min-height: 100%; }
   .rail { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
-  .hud.tl { top: 14px; left: 16px; } .hud.tr { top: 16px; right: 16px; } .hud.bl { left: 16px; right: 16px; }
+  .hud.tl { top: 14px; left: 16px; } .hud.tr { top: 16px; right: 16px; }
+  .hud.tl .hint, .dock-hint { display: none; }
+  .dock-wrap { bottom: 12px; }
+  .toast { bottom: 72px; white-space: normal; width: max-content; }
+  .dock-btn { padding: 9px 11px; min-width: 64px; } .dock-btn.primary { padding: 9px 14px; }
   .mark b { font-size: 22px; } .mark span { font-size: 16px; }
   .hint .keys { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .toast, .switch i, .switch i::after { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .toast, .switch i, .switch i::after, .busy-bar i { transition: none; } .dock-btn.pulse { animation: none; } }
 </style>
 </head>
 <body>
@@ -137,14 +167,39 @@ input[type="range"]:disabled { opacity: 0.4; }
   <div class="hud tl">
     <div class="mark"><b>3D</b><span>아스키 메이커</span></div>
     <div class="sub" id="srcname">기본 이미지 · 토끼</div>
+    <div class="hint">끌어서 돌리기 · 휠·핀치로 확대 · 더블클릭으로 처음 각도<span class="keys"> · <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> <kbd>space</kbd></span></div>
   </div>
   <div class="hud tr">
     <div class="stats" id="stats">—</div>
     <div class="stats" id="stats2"></div>
   </div>
-  <div class="hud bl"><div class="hint">끌어서 돌리기 · 휠·핀치로 확대 · 더블클릭으로 처음 각도<span class="keys"> · <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> <kbd>space</kbd></span></div></div>
+  <div class="dock-wrap">
+    <div class="dock" role="toolbar" aria-label="이미지 올리기와 다운로드">
+      <button class="dock-btn primary" id="up" type="button">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 10.5V2.5M4.5 6 8 2.5 11.5 6M2.5 10.5v2a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-2"/></svg>
+        이미지 올리기
+      </button>
+      <span class="dock-sep" aria-hidden="true"></span>
+      <button class="dock-btn" id="dl-gif" type="button" aria-label="360도 GIF 다운로드">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11"/></svg>
+        <span>GIF</span>
+      </button>
+      <button class="dock-btn" id="dl-mp4" type="button" aria-label="360도 MP4 동영상 다운로드">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v8M4.5 7 8 10.5 11.5 7M2.5 13.5h11"/></svg>
+        <span>MP4</span>
+      </button>
+    </div>
+    <div class="dock-hint">끌어다 놓거나 ⌘V로 붙여넣어도 바로 3D로 만들어요</div>
+  </div>
   <div class="drop" id="drop"><div>여기에 놓으면 바로 3D로 만들어요<br><span class="note">투명 배경 PNG가 가장 깔끔해요</span></div></div>
-  <div class="busy" id="busy">입체로 부풀리는 중…</div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="busy" id="busy" role="status" aria-live="polite">
+    <div class="busy-card">
+      <div class="busy-title" id="busy-title">이미지 읽는 중</div>
+      <div class="busy-bar"><i id="busy-bar"></i></div>
+      <div class="busy-step" id="busy-step">0 / 4</div>
+    </div>
+  </div>
 </main>
 
 <aside class="rail" aria-label="설정">
@@ -217,7 +272,7 @@ input[type="range"]:disabled { opacity: 0.4; }
   <section class="group" aria-labelledby="g4">
     <h2 id="g4">IMAGE<span>이미지</span></h2>
     <div class="row">
-      <button class="btn" id="pick">이미지 바꾸기</button>
+      <button class="btn" id="pick">다른 이미지 올리기</button>
       <button class="btn" id="reset-img">기본 토끼로</button>
     </div>
     <input type="file" id="file" accept="image/*" class="sr" tabindex="-1" aria-hidden="true">
@@ -234,12 +289,10 @@ input[type="range"]:disabled { opacity: 0.4; }
       <button class="btn" id="copy">텍스트 복사</button>
       <button class="btn" id="png">PNG 저장</button>
     </div>
-    <button class="btn primary" id="gif">360° GIF 만들기</button>
-    <p class="note">GIF는 지금 설정 그대로 한 바퀴(60프레임)를 녹화해요.</p>
+    <p class="note">GIF·MP4는 화면 아래 버튼으로 받아요. 지금 각도·글자·색 그대로 한 바퀴를 녹화해요 (GIF 640px · MP4 1080×1080).</p>
   </section>
 </aside>
 
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
 <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
   <div class="sheet">
     <h3 id="modal-title">미리보기</h3>
@@ -663,12 +716,13 @@ function renderCells(M, rc, cols, rows, aspect, view, opts) {
   const physW = cols, physH = rows / aspect;
   const { xmax, ymin, ymax } = M.fit;
   const yc = (ymin + ymax) / 2;
-  const Sc = view.zoom * 0.95 * Math.min(physW / 2 / xmax, physH / (ymax - ymin));
+  const padT = view.padT || 0, padB = view.padB || 0;
+  const Sc = view.zoom * 0.95 * Math.min(physW / 2 / xmax, (physH * (1 - padT - padB)) / (ymax - ymin));
   const sp = M.dx * (PERSP / (PERSP - M.rmax)) * Sc * SS;
   const kx = Math.max(1, Math.ceil(sp * 1.05)), ky = Math.max(1, Math.ceil(sp * aspect * 1.05));
   const ox = (kx - 1) / 2, oy = (ky - 1) / 2;
   const P = M.P, n = M.n;
-  const hw = physW / 2, hh = physH / 2;
+  const hw = physW / 2, hh = physH * (padT + (1 - padT - padB) / 2);
   const R0 = R[0], R1 = R[1], R2 = R[2], R3 = R[3], R4 = R[4], R5 = R[5], R6 = R[6], R7 = R[7], R8 = R[8];
   for (let i = 0; i < n; i++) {
     const o = i * 3, x = P[o], y = P[o + 1], z = P[o + 2];
@@ -1026,7 +1080,9 @@ const opts = () => ({ ramp: Array.from(RAMPS[S.ramp]), theme: S.theme, mode: S.m
 let fpsT = performance.now(), fpsN = 0, fps = 0;
 function draw() {
   if (!MODEL) return;
-  renderCells(MODEL, live, LAY.cols, LAY.rows, LAY.aspect, { yaw: V.yaw, pitch: V.pitch, zoom: S.zoom }, opts());
+  const h = LAY.devH / LAY.dpr;
+  renderCells(MODEL, live, LAY.cols, LAY.rows, LAY.aspect,
+    { yaw: V.yaw, pitch: V.pitch, zoom: S.zoom, padT: clamp(60 / h, 0, 0.18), padB: clamp(96 / h, 0, 0.24) }, opts());
   OUT.draw(live, LAY, opts());
   fpsN++;
 }
@@ -1053,31 +1109,53 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-/* image pipeline */
-async function setImage(src, name, isDefault) {
-  $('busy').classList.add('on');
-  await new Promise((r) => setTimeout(r, 20));
+/* image pipeline: upload -> automatic conversion in visible steps */
+const nextPaint = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+function setBusy(on, step, total, label) {
+  $('busy').classList.toggle('on', on);
+  if (!on) return;
+  $('busy-title').textContent = label;
+  $('busy-step').textContent = `${step} / ${total}`;
+  $('busy-bar').style.width = `${Math.round((step / total) * 100)}%`;
+}
+let imageBusy = false;
+async function setImage(src, name, isDefault, quiet) {
+  if (imageBusy) return;
+  imageBusy = true;
+  const show = !quiet;
   try {
+    if (show) { setBusy(true, 0, 4, '이미지 읽는 중'); await nextPaint(); }
     const img = await loadImg(src);
     SRC = { rgba: imageToRGBA(img), name, isDefault, src };
-    rebuildAll();
+    await rebuildStaged(show ? (i, label) => setBusy(true, i, 4, label) : null);
     $('srcname').textContent = isDefault ? '기본 이미지 · 토끼' : name;
     V.yaw = VIEW0.yaw; V.pitch = VIEW0.pitch; V.vyaw = V.vpitch = 0;
+    S.zoom = 1; zoomUI.sync();
+    if (!isDefault) {
+      toast('완성! 아래 GIF·MP4 버튼으로 바로 받을 수 있어요.');
+      for (const id of ['dl-gif', 'dl-mp4']) { const b = $(id); b.classList.remove('pulse'); void b.offsetWidth; b.classList.add('pulse'); }
+    }
   } catch (e) {
     toast(e.message || '이미지를 열지 못했어요. PNG나 JPG로 다시 시도해 주세요.');
   } finally {
-    $('busy').classList.remove('on');
+    if (show) setBusy(false);
+    imageBusy = false;
   }
 }
 
-function rebuildAll() {
+async function rebuildStaged(step) {
+  const tick = async (i, label) => { if (step) { step(i, label); await nextPaint(); } };
+  await tick(1, '배경 지우는 중');
   const { mask, hadAlpha } = computeMask(SRC.rgba, S.tol);
   SRC.hadAlpha = hadAlpha;
+  await tick(2, '선과 색 정리하는 중');
   const { tex, back } = prepTexture(SRC.rgba, mask);
+  await tick(3, '입체로 부풀리는 중');
   const G = toGrid(SRC.rgba, mask, tex, 240);
   G.back = back;
   G.u = poisson(G.gm, G.gw, G.gh);
   PREP = G;
+  await tick(4, '아스키로 그리는 중');
   MODEL = buildPoints(PREP, S.volume);
   $('tol').disabled = hadAlpha;
   $('tol-note').textContent = hadAlpha
@@ -1114,7 +1192,7 @@ const zoomUI = bindRange('zoom', 'zoom', (v) => `${Math.round(v * 100)}%`);
 bindRange('light', 'light', (v) => `${v > 0 ? '+' : ''}${v}°`);
 bindRange('speed', 'speed', (v) => v.toFixed(2));
 let tolTimer = 0;
-bindRange('tol', 'tol', (v) => String(v), () => { clearTimeout(tolTimer); tolTimer = setTimeout(() => { if (SRC && !SRC.hadAlpha) rebuildAll(); }, 120); });
+bindRange('tol', 'tol', (v) => String(v), () => { clearTimeout(tolTimer); tolTimer = setTimeout(() => { if (SRC && !SRC.hadAlpha) rebuildStaged(null); }, 120); });
 
 function bindChips(id, key, onChange) {
   const box = $(id);
@@ -1152,6 +1230,7 @@ bindSwitch('glow', 'glow');
 
 /* pointer + keys */
 stage.addEventListener('pointerdown', (e) => {
+  if (e.target.closest && e.target.closest('.dock-wrap, button')) return;
   stage.setPointerCapture(e.pointerId);
   drag.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (drag.pts.size === 2) {
@@ -1188,8 +1267,10 @@ stage.addEventListener('wheel', (e) => {
   S.zoom = clamp(S.zoom * Math.exp(-e.deltaY * 0.0012), 0.35, 3);
   zoomUI.sync(); dirty = true;
 }, { passive: false });
-stage.addEventListener('dblclick', () => { V.yaw = VIEW0.yaw; V.pitch = VIEW0.pitch; V.vyaw = V.vpitch = 0; S.zoom = 1; zoomUI.sync(); dirty = true; });
+stage.addEventListener('dblclick', (e) => {
+  if (e.target.closest && e.target.closest('.dock-wrap')) return; V.yaw = VIEW0.yaw; V.pitch = VIEW0.pitch; V.vyaw = V.vpitch = 0; S.zoom = 1; zoomUI.sync(); dirty = true; });
 stage.addEventListener('keydown', (e) => {
+  if (e.target !== stage) return;
   const k = e.key;
   if (k === 'ArrowLeft') V.yaw -= 0.12; else if (k === 'ArrowRight') V.yaw += 0.12;
   else if (k === 'ArrowUp') V.pitch = clamp(V.pitch - 0.1, -1.35, 1.35); else if (k === 'ArrowDown') V.pitch = clamp(V.pitch + 0.1, -1.35, 1.35);
@@ -1202,8 +1283,18 @@ stage.addEventListener('keydown', (e) => {
 
 /* files */
 $('pick').addEventListener('click', () => $('file').click());
+$('up').addEventListener('click', () => $('file').click());
+window.addEventListener('paste', (e) => {
+  const items = [...((e.clipboardData && e.clipboardData.items) || [])];
+  const it = items.find((i) => i.kind === 'file' && i.type.startsWith('image/'));
+  if (!it) return;
+  const f = it.getAsFile();
+  if (!f) return;
+  e.preventDefault();
+  openFile(new File([f], f.name && f.name !== 'image.png' ? f.name : 'pasted-image.png', { type: f.type }));
+});
 $('file').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; if (f) openFile(f); e.target.value = ''; });
-$('reset-img').addEventListener('click', () => setImage(BUNNY_SRC, '토끼', true));
+$('reset-img').addEventListener('click', () => setImage(BUNNY_SRC, '토끼', true, true));
 function openFile(f) {
   if (!f.type.startsWith('image/')) { toast('이미지 파일(PNG, JPG, WebP, GIF)을 넣어 주세요.'); return; }
   const rd = new FileReader();
@@ -1272,6 +1363,40 @@ async function offerFile(blob, filename) {
     return false;
   }
 }
+const inClaude = !!(window.claude && window.claude.use);
+function baseName() {
+  if (!SRC || SRC.isDefault) return 'bunny-ascii3d';
+  const b = String(SRC.name || '').replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|#%]+/g, '_').trim().slice(0, 60);
+  return `${b || 'image'}-ascii3d`;
+}
+async function saveBlob(blob, filename, title) {
+  if (DL) {
+    try {
+      await DL.save({ filename, data: blob });
+      toast(`${filename} 저장을 요청했어요.`);
+      return;
+    } catch (err) {
+      const code = err && err.code;
+      if (code === 'declined') { toast('저장을 취소했어요.'); return; }
+      if (code === 'rate_limited') { toast('다른 저장 창이 열려 있어요. 잠시 뒤 다시 눌러 주세요.'); return; }
+      previewAndSave(blob, filename, title);
+      return;
+    }
+  }
+  if (inClaude) { previewAndSave(blob, filename, title); return; }
+  try {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    const kb = Math.round(blob.size / 1024);
+    toast(`${filename} 다운로드했어요 (${kb >= 1024 ? (kb / 1024).toFixed(1) + 'MB' : kb + 'KB'}).`);
+  } catch (e) {
+    previewAndSave(blob, filename, title);
+  }
+}
 function previewAndSave(blob, filename, title) {
   const url = URL.createObjectURL(blob);
   const img = new Image(); img.src = url; img.alt = title;
@@ -1305,7 +1430,7 @@ $('copy').addEventListener('click', async () => {
 });
 $('png').addEventListener('click', () => {
   draw();
-  canvas.toBlob((blob) => { if (blob) previewAndSave(blob, 'ascii-3d.png', 'PNG 미리보기'); else toast('PNG를 만들지 못했어요.'); }, 'image/png');
+  canvas.toBlob((blob) => { if (blob) saveBlob(blob, `${baseName()}.png`, 'PNG 미리보기'); else toast('PNG를 만들지 못했어요.'); }, 'image/png');
 });
 
 /* ------------------------------------------------------------------ */
@@ -1395,12 +1520,14 @@ function composeRGB(rc, atlasA, cw, ch, bg, out) {
   }
 }
 
-let gifBusy = false;
+let exporting = false;
+function lockExports(on) { for (const id of ['dl-gif', 'dl-mp4', 'png']) $(id).disabled = on; }
+function btnLabel(btn, text) { const sp = btn.querySelector('span'); (sp || btn).textContent = text; }
 async function makeGif() {
-  if (gifBusy || !MODEL) return;
-  gifBusy = true;
-  const btn = $('gif');
-  btn.disabled = true;
+  if (exporting || !MODEL) return;
+  exporting = true;
+  const btn = $('dl-gif');
+  lockExports(true);
   try {
     const FR = 60, DELAY = 5;
     const fontPx = 10;
@@ -1456,21 +1583,116 @@ async function makeGif() {
       out.push(0x21); out.push(0xf9); out.push(4); out.push(0x04); u16(DELAY); out.push(0); out.push(0);
       out.push(0x2c); u16(0); u16(0); u16(W); u16(H); out.push(0);
       lzwEncode(out, idx, 8);
-      btn.textContent = `GIF 만드는 중 ${Math.round(((f + 1) / FR) * 100)}%`;
+      btnLabel(btn, `${Math.round(((f + 1) / FR) * 100)}%`);
       await new Promise((r) => setTimeout(r, 0));
     }
     out.push(0x3b);
     const blob = new Blob([out.a.slice(0, out.n)], { type: 'image/gif' });
     window.__lastGif = blob;
-    previewAndSave(blob, 'ascii-3d.gif', '360° GIF 미리보기');
+    btnLabel(btn, 'GIF');
+    await saveBlob(blob, `${baseName()}.gif`, '360° GIF 미리보기');
   } catch (e) {
     console.error(e);
-    toast('GIF를 만들지 못했어요. 글자 크기를 키우거나 다시 시도해 주세요.');
+    toast('GIF를 만들지 못했어요. 다시 시도해 주세요.');
   } finally {
-    gifBusy = false; btn.disabled = false; btn.textContent = '360° GIF 만들기';
+    exporting = false; lockExports(false); btnLabel(btn, 'GIF');
   }
 }
-$('gif').addEventListener('click', makeGif);
+$('dl-gif').addEventListener('click', makeGif);
+
+/* MP4: render one turn on a hidden 1080×1080 canvas, encode with WebCodecs via Mediabunny */
+const MB_URL = 'https://cdn.jsdelivr.net/npm/mediabunny@1.65.1/dist/bundles/mediabunny.min.mjs';
+let mbPromise = null;
+function loadMediabunny() {
+  if (!mbPromise) mbPromise = import(MB_URL).catch((e) => { mbPromise = null; throw e; });
+  return mbPromise;
+}
+async function recordFallback(cv, drawFrame, N, FPS, onProgress) {
+  const types = ['video/mp4;codecs=avc1.640028', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm'];
+  const mime = window.MediaRecorder && types.find((t) => MediaRecorder.isTypeSupported(t));
+  if (!mime || !cv.captureStream) throw new Error('이 브라우저에서는 동영상을 만들 수 없어요. 최신 Chrome이나 Safari에서 해 보세요.');
+  const stream = cv.captureStream(FPS);
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 10000000 });
+  const chunks = [];
+  rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+  const stopped = new Promise((r) => { rec.onstop = r; });
+  rec.start();
+  const t0 = performance.now();
+  for (let f = 0; f < N; f++) {
+    drawFrame(f);
+    onProgress((f + 1) / N);
+    const wait = t0 + ((f + 1) * 1000) / FPS - performance.now();
+    await new Promise((r) => setTimeout(r, Math.max(0, wait)));
+  }
+  rec.stop();
+  await stopped;
+  stream.getTracks().forEach((t) => t.stop());
+  const type = mime.split(';')[0];
+  return { blob: new Blob(chunks, { type }), ext: type === 'video/mp4' ? 'mp4' : 'webm' };
+}
+async function makeVideo() {
+  if (exporting || !MODEL) return;
+  exporting = true;
+  const btn = $('dl-mp4');
+  lockExports(true);
+  const SIZE = 1080, FPS = 30, N = 120;
+  const cv = document.createElement('canvas');
+  cv.width = SIZE; cv.height = SIZE;
+  cv.style.cssText = 'position:fixed;left:-20000px;top:0;width:8px;height:8px;pointer-events:none;';
+  document.body.appendChild(cv);
+  let out = null;
+  try {
+    btnLabel(btn, '준비 중');
+    try { out = initGL(cv); } catch (e) { out = null; }
+    if (!out) out = init2D(cv);
+    const fontPx = 14;
+    const m = measureCell(fontPx);
+    const lay = { devW: SIZE, devH: SIZE, cw: m.cw, ch: m.ch, fontPx };
+    lay.cols = Math.floor(SIZE / lay.cw); lay.rows = Math.floor(SIZE / lay.ch);
+    lay.offX = Math.floor((SIZE - lay.cols * lay.cw) / 2); lay.offY = Math.floor((SIZE - lay.rows * lay.ch) / 2);
+    lay.aspect = lay.cw / lay.ch;
+    out.setAtlas(buildAtlas(RAMPS[S.ramp], lay.cw, lay.ch, fontPx));
+    const rc = makeRenderCtx(), o = opts();
+    const yaw0 = V.yaw, pitch = V.pitch, zoom = S.zoom;
+    const drawFrame = (f) => {
+      renderCells(MODEL, rc, lay.cols, lay.rows, lay.aspect, { yaw: yaw0 + (f / N) * Math.PI * 2, pitch, zoom }, o);
+      out.draw(rc, lay, o);
+    };
+    const progress = (t) => btnLabel(btn, `${Math.round(t * 100)}%`);
+    let blob = null, ext = 'mp4';
+    try {
+      const MB = await loadMediabunny();
+      const codec = await MB.getFirstEncodableVideoCodec(['avc', 'hevc', 'vp9', 'av1'], { width: SIZE, height: SIZE });
+      if (!codec) throw new Error('no encodable codec');
+      const output = new MB.Output({ format: new MB.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new MB.BufferTarget() });
+      const source = new MB.CanvasSource(cv, { codec, bitrate: MB.QUALITY_VERY_HIGH, keyFrameInterval: 1 });
+      output.addVideoTrack(source, { frameRate: FPS });
+      await output.start();
+      for (let f = 0; f < N; f++) {
+        drawFrame(f);
+        await source.add(f / FPS, 1 / FPS);
+        progress((f + 1) / N);
+      }
+      await output.finalize();
+      blob = new Blob([output.target.buffer], { type: 'video/mp4' });
+      window.__lastVideoCodec = codec;
+    } catch (err) {
+      console.warn('WebCodecs path unavailable, recording in real time instead:', err);
+      ({ blob, ext } = await recordFallback(cv, drawFrame, N, FPS, progress));
+    }
+    window.__lastVideo = blob;
+    btnLabel(btn, 'MP4');
+    await saveBlob(blob, `${baseName()}.${ext}`, '360° 동영상');
+  } catch (e) {
+    console.error(e);
+    toast(e && e.message && /브라우저/.test(e.message) ? e.message : '동영상을 만들지 못했어요. 다시 시도해 주세요.');
+  } finally {
+    try { const gl = cv.getContext('webgl'); const ext = gl && gl.getExtension('WEBGL_lose_context'); if (ext) ext.loseContext(); } catch (e) {}
+    cv.remove();
+    exporting = false; lockExports(false); btnLabel(btn, 'MP4');
+  }
+}
+$('dl-mp4').addEventListener('click', makeVideo);
 
 /* ------------------------------------------------------------------ */
 /* boot                                                                */
@@ -1482,7 +1704,7 @@ function start(saved) {
   syncUI();
   new ResizeObserver(() => layout()).observe(stage);
   layout();
-  setImage(BUNNY_SRC, '토끼', true);
+  setImage(BUNNY_SRC, '토끼', true, true);
   if (document.fonts && document.fonts.load) {
     document.fonts.load(`600 20px "Martian Mono"`).then(() => { atlasKey = ''; layout(); }).catch(() => {});
   }
