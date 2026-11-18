@@ -429,29 +429,33 @@ function imageToRGBA(img) {
   return { w, h, data: ctx.getImageData(0, 0, w, h).data };
 }
 
-function computeMask(rgba, tol) {
-  const { w, h, data } = rgba;
-  const n = w * h;
-  const mask = new Uint8Array(n);
-  let transparent = 0;
-  for (let i = 0; i < n; i++) if (data[i * 4 + 3] < 128) transparent++;
-  if (transparent > n * 0.005) {
-    for (let i = 0; i < n; i++) mask[i] = data[i * 4 + 3] >= 128 ? 1 : 0;
-    return { mask, hadAlpha: true };
+function labOf(rgba) {
+  const { w, h, data } = rgba, n = w * h;
+  const lut = new Float32Array(256);
+  for (let i = 0; i < 256; i++) { const c = i / 255; lut[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const L = new Float32Array(n), A = new Float32Array(n), B = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const r = lut[data[i * 4]], g = lut[data[i * 4 + 1]], b = lut[data[i * 4 + 2]];
+    const fx = f((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047), fy = f(0.2126 * r + 0.7152 * g + 0.0722 * b), fz = f((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+    L[i] = 116 * fy - 16; A[i] = 500 * (fx - fy); B[i] = 200 * (fy - fz);
   }
-  // no transparency: flood-fill the background from the border
+  return { L, A, B };
+}
+
+// the original rule: one background colour (border median), flood from the border within tol (RGB)
+function floodBorder(rgba, tol) {
+  const { w, h, data } = rgba, n = w * h;
   const rs = [], gs = [], bs = [];
   const pushPx = (x, y) => { const i = (y * w + x) * 4; rs.push(data[i]); gs.push(data[i + 1]); bs.push(data[i + 2]); };
   for (let x = 0; x < w; x++) { pushPx(x, 0); pushPx(x, h - 1); }
   for (let y = 0; y < h; y++) { pushPx(0, y); pushPx(w - 1, y); }
   const med = (a) => { a.sort((p, q) => p - q); return a[a.length >> 1]; };
-  const R = med(rs), G = med(gs), B = med(bs);
-  const t2 = tol * tol;
+  const R = med(rs), G = med(gs), B = med(bs), t2 = tol * tol;
   const near = (i) => { const k = i * 4, dr = data[k] - R, dg = data[k + 1] - G, db = data[k + 2] - B; return dr * dr + dg * dg + db * db <= t2; };
-  const bgm = new Uint8Array(n);
-  const q = new Int32Array(n);
+  const bg = new Uint8Array(n), q = new Int32Array(n);
   let qh = 0, qt = 0;
-  const seed = (i) => { if (!bgm[i] && near(i)) { bgm[i] = 1; q[qt++] = i; } };
+  const seed = (i) => { if (!bg[i] && near(i)) { bg[i] = 1; q[qt++] = i; } };
   for (let x = 0; x < w; x++) { seed(x); seed((h - 1) * w + x); }
   for (let y = 0; y < h; y++) { seed(y * w); seed(y * w + w - 1); }
   while (qh < qt) {
@@ -461,18 +465,251 @@ function computeMask(rgba, tol) {
     if (y > 0) seed(i - w);
     if (y < h - 1) seed(i + w);
   }
-  let cnt = 0;
-  for (let i = 0; i < n; i++) { mask[i] = bgm[i] ? 0 : 1; cnt += mask[i]; }
-  if (cnt < n * 0.01 || cnt > n * 0.985) { mask.fill(1); return { mask, hadAlpha: false }; }
-  // drop specks: keep components at least 2% of the largest
-  const lab = new Int32Array(n);
-  const sizes = [0];
+  return bg;
+}
+
+// grow a region from the border through pixels that pass ok(from, to); returns 0/1
+function growFromBorder(w, h, okSeed, okStep) {
+  const n = w * h, out = new Uint8Array(n), q = new Int32Array(n);
+  let qh = 0, qt = 0;
+  const seed = (i) => { if (!out[i] && okSeed(i)) { out[i] = 1; q[qt++] = i; } };
+  for (let x = 0; x < w; x++) { seed(x); seed((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { seed(y * w); seed(y * w + w - 1); }
+  while (qh < qt) {
+    const i = q[qh++], x = i % w, y = (i / w) | 0;
+    if (x > 0 && !out[i - 1] && okStep(i, i - 1)) { out[i - 1] = 1; q[qt++] = i - 1; }
+    if (x < w - 1 && !out[i + 1] && okStep(i, i + 1)) { out[i + 1] = 1; q[qt++] = i + 1; }
+    if (y > 0 && !out[i - w] && okStep(i, i - w)) { out[i - w] = 1; q[qt++] = i - w; }
+    if (y < h - 1 && !out[i + w] && okStep(i, i + w)) { out[i + w] = 1; q[qt++] = i + w; }
+  }
+  return out;
+}
+
+function boxBlur(src, w, h, r) {
+  const n = w * h, tmp = new Float32Array(n), out = new Float32Array(n);
+  for (let y = 0; y < h; y++) {
+    let s = 0;
+    const row = y * w;
+    for (let x = -r; x <= r; x++) s += src[row + clamp(x, 0, w - 1)];
+    for (let x = 0; x < w; x++) {
+      tmp[row + x] = s / (2 * r + 1);
+      s += src[row + clamp(x + r + 1, 0, w - 1)] - src[row + clamp(x - r, 0, w - 1)];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let s = 0;
+    for (let y = -r; y <= r; y++) s += tmp[clamp(y, 0, h - 1) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = s / (2 * r + 1);
+      s += tmp[clamp(y + r + 1, 0, h - 1) * w + x] - tmp[clamp(y - r, 0, h - 1) * w + x];
+    }
+  }
+  return out;
+}
+
+// background colours learned from the border (several, so two-tone walls / gradients / busy photos work),
+// grown inward through smooth areas but not across edges, then refined with fg/bg colour models (a light GrabCut)
+function segmentBg(rgba, tol) {
+  const { w, h } = rgba, n = w * h;
+  const { L, A, B } = labOf(rgba);
+  const ts = clamp(tol / 48, 0.3, 3);
+  const de = (i, j) => Math.hypot(L[i] - L[j], A[i] - A[j], B[i] - B[j]);
+  // 1. border colours -> up to 6 clusters
+  const bw = Math.max(2, Math.round(Math.min(w, h) * 0.006));
+  const border = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (x < bw || y < bw || x >= w - bw || y >= h - bw) border.push(y * w + x);
+  const cd2 = (i, c) => { const a = L[i] - c[0], b = A[i] - c[1], e = B[i] - c[2]; return a * a + b * b + e * e; };
+  const cen = [];
+  { const i0 = border[border.length >> 1]; cen.push([L[i0], A[i0], B[i0]]); }
+  while (cen.length < 6) {
+    let best = -1, bd = -1;
+    for (let t = 0; t < border.length; t += 3) { const i = border[t]; let d = 1e18; for (const c of cen) d = Math.min(d, cd2(i, c)); if (d > bd) { bd = d; best = i; } }
+    if (bd < 64) break;
+    cen.push([L[best], A[best], B[best]]);
+  }
+  const K = cen.length, asg = new Int8Array(border.length);
+  for (let it = 0; it < 10; it++) {
+    const s = cen.map(() => [0, 0, 0, 0]);
+    for (let t = 0; t < border.length; t++) {
+      const i = border[t];
+      let bk = 0, bd = 1e18;
+      for (let k = 0; k < K; k++) { const d = cd2(i, cen[k]); if (d < bd) { bd = d; bk = k; } }
+      asg[t] = bk; s[bk][0] += L[i]; s[bk][1] += A[i]; s[bk][2] += B[i]; s[bk][3]++;
+    }
+    for (let k = 0; k < K; k++) if (s[k][3]) { cen[k][0] = s[k][0] / s[k][3]; cen[k][1] = s[k][1] / s[k][3]; cen[k][2] = s[k][2] / s[k][3]; }
+  }
+  const cnt = new Float32Array(K), spr = new Float32Array(K);
+  for (let t = 0; t < border.length; t++) { const k = asg[t]; cnt[k]++; spr[k] += cd2(border[t], cen[k]); }
+  for (let k = 0; k < K; k++) spr[k] = cnt[k] ? Math.sqrt(spr[k] / cnt[k]) : 0;
+  // a border colour that is also all over the middle of the picture is the subject touching the edge, not background
+  const mid = [];
+  for (let y = Math.round(h * 0.3); y < h * 0.7; y += 2) for (let x = Math.round(w * 0.3); x < w * 0.7; x += 2) mid.push(y * w + x);
+  // likewise a colour that only shows on one edge, away from its corners (a shirt at the bottom of a portrait)
+  const sides = cen.map(() => [0, 0, 0, 0]), reach = new Uint8Array(K);
+  for (let t = 0; t < border.length; t++) {
+    const i = border[t], x = i % w, y = (i / w) | 0, k = asg[t];
+    if (y < bw) sides[k][0]++; if (y >= h - bw) sides[k][1]++; if (x < bw) sides[k][2]++; if (x >= w - bw) sides[k][3]++;
+    if ((x < w * 0.08 || x >= w * 0.92) && (y < h * 0.08 || y >= h * 0.92)) reach[k] = 1;
+  }
+  const bgk = [];
+  for (let k = 0; k < K; k++) {
+    const share = cnt[k] / border.length;
+    if (share < 0.04) continue;
+    const nSides = sides[k].filter((v) => v >= cnt[k] * 0.1).length;
+    if (nSides < 2 && !reach[k]) continue;
+    const r2 = Math.pow(Math.max(8, 2 * spr[k] + 4), 2);
+    let inMid = 0;
+    for (const i of mid) if (cd2(i, cen[k]) <= r2) inMid++;
+    if (inMid / Math.max(1, mid.length) <= Math.max(0.3, share * 0.9)) bgk.push(k);
+  }
+  if (!bgk.length) return null;
+  const dbg = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let d = 1e9;
+    for (const k of bgk) d = Math.min(d, Math.sqrt(cd2(i, cen[k])) - spr[k]);
+    dbg[i] = d < 0 ? 0 : d;
+  }
+  // gradient over 2 px each way: soft photo edges show up, slow gradients (vignettes) don't
+  const G2 = new Float32Array(n);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    const gx = de(y * w + Math.max(0, x - 2), y * w + Math.min(w - 1, x + 2));
+    const gy = de(Math.max(0, y - 2) * w + x, Math.min(h - 1, y + 2) * w + x);
+    G2[i] = Math.max(gx, gy);
+  }
+  // a run of colour that enters the picture mid-edge (not from a corner) is the subject leaving the frame: no seeds there
+  const noSeed = new Uint8Array(n);
+  // ...and if that colour carries on into the middle of the picture, it is protected from becoming background
+  const keepFg = new Uint8Array(n);
+  const protect = (run, cL, cA, cB) => {
+    const reg = new Uint8Array(n), q = [], near = (i) => Math.hypot(L[i] - cL, A[i] - cA, B[i] - cB) <= 12 * ts && G2[i] <= 10 * ts;
+    for (const i of run) if (near(i)) { reg[i] = 1; q.push(i); }
+    let mid = false;
+    for (let t = 0; t < q.length && q.length < n * 0.6; t++) {
+      const i = q[t], x = i % w, y = (i / w) | 0;
+      if (x > w * 0.3 && x < w * 0.7 && y > h * 0.3 && y < h * 0.7) mid = true;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) if (j >= 0 && !reg[j] && near(j)) { reg[j] = 1; q.push(j); }
+    }
+    if (mid) for (const i of q) keepFg[i] = 1;
+  };
+  const sideRuns = (idx) => {
+    // split the edge where the colour jumps (or drifts far from where the run started)
+    const m = idx.length;
+    let t0 = 0, mL = L[idx[0]], mA = A[idx[0]], mB = B[idx[0]], c = 1;
+    const close = (t1) => { if (t0 > m * 0.03 && t1 < m * 0.97 && t1 - t0 >= m * 0.03) { const run = idx.slice(t0, t1); for (const i of run) noSeed[i] = 1; protect(run, mL, mA, mB); } };
+    for (let t = 1; t < m; t++) {
+      const i = idx[t], jump = de(i, idx[t - 1]) > 8 * ts, drift = Math.hypot(L[i] - mL, A[i] - mA, B[i] - mB) > 18 * ts;
+      if (jump || drift) { close(t); t0 = t; mL = L[i]; mA = A[i]; mB = B[i]; c = 1; }
+      else { c++; mL += (L[i] - mL) / c; mA += (A[i] - mA) / c; mB += (B[i] - mB) / c; }
+    }
+    close(m);
+  };
+  sideRuns(Array.from({ length: w }, (_, x) => x));
+  sideRuns(Array.from({ length: w }, (_, x) => (h - 1) * w + x));
+  sideRuns(Array.from({ length: h }, (_, y) => y * w));
+  sideRuns(Array.from({ length: h }, (_, y) => y * w + w - 1));
+  // 2. sure background: close to a border colour, or a smooth continuation of it, never across a strong edge
+  const T1 = 10 * ts;
+  // the subject is usually near the middle: let smooth growth cross weaker edges near the border than in the middle
+  const cw = (i) => { const x = (i % w) / w - 0.5, y = ((i / w) | 0) / h - 0.5; return Math.max(0, 1 - Math.hypot(x, y) / 0.5); };
+  let bg = growFromBorder(w, h, (i) => !noSeed[i] && !keepFg[i] && dbg[i] <= T1, (p, q) => !keepFg[q] && ((dbg[q] <= T1 && G2[q] <= 14 * ts) || (de(p, q) <= 2.5 * ts && G2[q] <= (6 - 3.5 * cw(q)) * ts && dbg[q] <= 2.5 * T1)));
+  // 3. refine with colour models, a few rounds
+  bg = refineBg(bg, L, A, B, w, h, 3, 0.25, keepFg);
+  let cf = 0;
+  for (let i = 0; i < n; i++) cf += bg[i] ? 0 : 1;
+  if (cf < n * 0.03) {
+    // the background swallowed everything (a pale subject on a pale wall): start again from "subject in the middle"
+    const start = new Uint8Array(n);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const u = (x / w - 0.5) / 0.36, v = (y / h - 0.5) / 0.4; start[y * w + x] = u * u + v * v > 1 ? 1 : 0; }
+    bg = refineBg(start, L, A, B, w, h, 6, 0.1, keepFg);
+  }
+  const fg = new Uint8Array(n);
+  for (let i = 0; i < n; i++) fg[i] = bg[i] ? 0 : 1;
+  return keepSubject(fg, w, h);
+}
+
+// leftovers of a busy background: pieces that touch the edge, stay away from the middle and are small next to the subject
+function keepSubject(fg, w, h) {
+  const n = w * h, lab = new Int32Array(n), q = new Int32Array(n), info = [null];
+  let cur = 0;
+  for (let s0 = 0; s0 < n; s0++) {
+    if (!fg[s0] || lab[s0]) continue;
+    cur++;
+    let qh = 0, qt = 0, size = 0, edge = false, mid = false;
+    q[qt++] = s0; lab[s0] = cur;
+    while (qh < qt) {
+      const i = q[qh++], x = i % w, y = (i / w) | 0;
+      size++;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) edge = true;
+      if (x > w * 0.25 && x < w * 0.75 && y > h * 0.25 && y < h * 0.75) mid = true;
+      if (x > 0 && fg[i - 1] && !lab[i - 1]) { lab[i - 1] = cur; q[qt++] = i - 1; }
+      if (x < w - 1 && fg[i + 1] && !lab[i + 1]) { lab[i + 1] = cur; q[qt++] = i + 1; }
+      if (y > 0 && fg[i - w] && !lab[i - w]) { lab[i - w] = cur; q[qt++] = i - w; }
+      if (y < h - 1 && fg[i + w] && !lab[i + w]) { lab[i + w] = cur; q[qt++] = i + w; }
+    }
+    info.push({ size, edge, mid });
+  }
+  let big = 0;
+  for (let c = 1; c <= cur; c++) big = Math.max(big, info[c].size);
+  for (let i = 0; i < n; i++) { const c = lab[i]; if (c && info[c].edge && !info[c].mid && info[c].size < big * 0.25) fg[i] = 0; }
+  return fg;
+}
+
+// one or more rounds of: learn fg / bg colours away from the current edge, classify, smooth, keep only background
+// that reaches the border (so anything enclosed stays part of the subject)
+function refineBg(bg, L, A, B, w, h, rounds, keep = 0.25, keepFg = null) {
+  const n = w * h;
+  const QL = 10, QA = 12, bins = QL * QA * QA, bin = new Uint16Array(n);
+  for (let i = 0; i < n; i++) {
+    const l = clamp(Math.floor((L[i] / 100) * QL), 0, QL - 1), a = clamp(Math.floor(((A[i] + 90) / 180) * QA), 0, QA - 1), b = clamp(Math.floor(((B[i] + 90) / 180) * QA), 0, QA - 1);
+    bin[i] = (l * QA + a) * QA + b;
+  }
+  const r = Math.max(2, Math.round(Math.min(w, h) / 160));
+  for (let round = 0; round < rounds; round++) {
+    const edge = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = i % w;
+      if ((x > 0 && bg[i - 1] !== bg[i]) || (x < w - 1 && bg[i + 1] !== bg[i]) || (i >= w && bg[i - w] !== bg[i]) || (i < n - w && bg[i + w] !== bg[i])) edge[i] = 1;
+    }
+    const near = boxBlur(edge, w, h, 2);
+    const hf = new Float32Array(bins), hb = new Float32Array(bins);
+    let nf = 0, nb = 0;
+    for (let i = 0; i < n; i++) { if (near[i] > 0) continue; if (bg[i]) { hb[bin[i]]++; nb++; } else { hf[bin[i]]++; nf++; } }
+    if (nf < n * 0.002 || nb < n * 0.002) break;
+    const sm = (hh) => {
+      const o = new Float32Array(bins);
+      for (let l = 0; l < QL; l++) for (let a = 0; a < QA; a++) for (let b = 0; b < QA; b++) {
+        const k = (l * QA + a) * QA + b;
+        let s = hh[k] * 2;
+        if (l > 0) s += hh[k - QA * QA] * 0.5; if (l < QL - 1) s += hh[k + QA * QA] * 0.5;
+        if (a > 0) s += hh[k - QA] * 0.5; if (a < QA - 1) s += hh[k + QA] * 0.5;
+        if (b > 0) s += hh[k - 1] * 0.5; if (b < QA - 1) s += hh[k + 1] * 0.5;
+        o[k] = s;
+      }
+      return o;
+    };
+    const pf = sm(hf), pb = sm(hb);
+    const P = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const f = pf[bin[i]] / nf + 1e-6, b = pb[bin[i]] / nb + 1e-6;
+      P[i] = (1 - keep) * (f / (f + b)) + keep * (bg[i] ? 0 : 1);
+    }
+    const Q = boxBlur(boxBlur(P, w, h, r), w, h, r);
+    if (keepFg) for (let i = 0; i < n; i++) if (keepFg[i]) Q[i] = 1;
+    bg = growFromBorder(w, h, (i) => Q[i] < 0.5, (p, q) => Q[q] < 0.5);
+  }
+  return bg;
+}
+
+// keep the parts that matter: components at least 2% of the largest
+function dropSpecks(mask, w, h) {
+  const n = w * h, lab = new Int32Array(n), q = new Int32Array(n), sizes = [0];
   let cur = 0;
   for (let s = 0; s < n; s++) {
     if (!mask[s] || lab[s]) continue;
     cur++;
-    let size = 0;
-    qh = 0; qt = 0; q[qt++] = s; lab[s] = cur;
+    let qh = 0, qt = 0, size = 0;
+    q[qt++] = s; lab[s] = cur;
     while (qh < qt) {
       const i = q[qh++], x = i % w, y = (i / w) | 0;
       size++;
@@ -486,7 +723,36 @@ function computeMask(rgba, tol) {
   let big = 0;
   for (const z of sizes) if (z > big) big = z;
   for (let i = 0; i < n; i++) if (mask[i] && sizes[lab[i]] < big * 0.02) mask[i] = 0;
-  return { mask, hadAlpha: false };
+  return mask;
+}
+
+function computeMask(rgba, tol) {
+  const { w, h, data } = rgba;
+  const n = w * h;
+  let transparent = 0;
+  for (let i = 0; i < n; i++) if (data[i * 4 + 3] < 128) transparent++;
+  if (transparent > n * 0.005) {
+    const mask = new Uint8Array(n);
+    for (let i = 0; i < n; i++) mask[i] = data[i * 4 + 3] >= 128 ? 1 : 0;
+    return { mask, hadAlpha: true };
+  }
+  const cover = (m) => { let c = 0; for (let i = 0; i < n; i++) c += m[i]; return c / n; };
+  // a plain background: flood it from the border (pixel-exact, the original rule)
+  const bgOld = floodBorder(rgba, tol), old = new Uint8Array(n);
+  for (let i = 0; i < n; i++) old[i] = bgOld[i] ? 0 : 1;
+  dropSpecks(old, w, h);
+  const okOld = cover(old) > 0.01 && cover(old) < 0.985;
+  const whole = () => ({ mask: new Uint8Array(n).fill(1), hadAlpha: false });
+  // gradients, two-tone rooms, busy photos: learned background colours + colour models
+  const neu = segmentBg(rgba, tol);
+  if (neu) dropSpecks(neu, w, h);
+  const cn = neu ? cover(neu) : 0;
+  if (!neu || cn < 0.01 || cn > 0.97) return okOld ? { mask: old, hadAlpha: false } : whole();
+  if (!okOld) return { mask: neu, hadAlpha: false };
+  // where both agree, keep the pixel-exact flood
+  let inter = 0, uni = 0;
+  for (let i = 0; i < n; i++) { if (old[i] && neu[i]) inter++; if (old[i] || neu[i]) uni++; }
+  return { mask: uni && inter / uni >= 0.97 ? old : neu, hadAlpha: false };
 }
 
 /* ------------------------------------------------------------------ */
@@ -530,6 +796,15 @@ function prepTexture(rgba, mask) {
     const k = i * 4;
     const l = (LW[0] * data[k] + LW[1] * data[k + 1] + LW[2] * data[k + 2]) / 255;
     ink[i] = mask[i] && l < 0.36 ? 1 : 0;
+  }
+  // photos and big dark areas aren't line art: only thin dark strokes count as drawn lines
+  let ic = 0, mc = 0;
+  for (let i = 0; i < n; i++) if (mask[i]) { mc++; ic += ink[i]; }
+  if (ic) {
+    const Di = chamfer(ink, w, h);
+    let thin = 0;
+    for (let i = 0; i < n; i++) if (ink[i] && Di[i] <= 4.5) thin++;
+    if (ic > mc * 0.45 || thin < ic * 0.6) ink.fill(0);
   }
   const D = chamfer(mask, w, h);
   // outline thickness = deepest distance ring that is still mostly ink
