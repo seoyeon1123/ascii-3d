@@ -1,0 +1,1497 @@
+<!DOCTYPE html>
+<html lang="ko" data-render="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D 아스키 메이커</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Martian+Mono:wdth,wght@75..112.5,300..800&family=Nanum+Gothic+Coding:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* layout: the live render is the hero and fills the stage; a quiet control rail sits right and drops below on phones */
+  --bg: #0d0b14;
+  --surface: #15121d;
+  --line: #2a2539;
+  --text: #f1ead6;
+  --muted: #8d85a1;
+  --accent: #f5a3b7;
+  --font-display: "Martian Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-body: "Nanum Gothic Coding", "Martian Mono", ui-monospace, Menlo, Consolas, monospace;
+  --s-1: 11px; --s-2: 12.5px; --s-3: 14px; --s-4: 19px;
+  color-scheme: dark;
+}
+:root[data-render="paper"] {
+  --bg: #f1ece1;
+  --surface: #faf7f0;
+  --line: #ddd4c2;
+  --text: #1d1923;
+  --muted: #6b6474;
+  --accent: #c64a6e;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--font-body); font-size: var(--s-2); line-height: 1.5;
+  display: grid; grid-template-columns: minmax(0, 1fr) 316px;
+  overflow: hidden;
+}
+.stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; touch-action: none; cursor: grab; outline: none; }
+.stage:active { cursor: grabbing; }
+.stage:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.hud { position: absolute; pointer-events: none; display: flex; flex-direction: column; gap: 4px; }
+.hud.tl { top: 18px; left: 20px; }
+.hud.tr { top: 20px; right: 20px; align-items: flex-end; text-align: right; }
+.hud.bl { bottom: 16px; left: 20px; right: 20px; }
+.mark { display: flex; align-items: baseline; gap: 10px; }
+.mark b { font-family: var(--font-display); font-weight: 800; font-size: 26px; font-stretch: 112.5%; letter-spacing: -0.02em; color: var(--accent); line-height: 1; }
+.mark span { font-weight: 700; font-size: var(--s-4); letter-spacing: -0.01em; }
+.sub, .stats, .hint { color: var(--muted); font-size: var(--s-1); }
+.stats { font-family: var(--font-display); font-variant-numeric: tabular-nums; font-stretch: 87.5%; }
+.hint kbd { font-family: var(--font-display); font-size: 10px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--text); }
+.drop {
+  position: absolute; inset: 14px; border: 1.5px dashed var(--accent); border-radius: 14px;
+  display: none; place-items: center; text-align: center; background: color-mix(in srgb, var(--bg) 82%, transparent);
+  font-size: var(--s-3); pointer-events: none;
+}
+.drop.on { display: grid; }
+.busy { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-family: var(--font-display); color: var(--muted); font-size: var(--s-1); display: none; }
+.busy.on { display: block; }
+
+.rail {
+  background: var(--surface); border-left: 1px solid var(--line);
+  overflow-y: auto; padding: 18px 18px 26px; display: flex; flex-direction: column; gap: 20px;
+}
+.group { display: flex; flex-direction: column; gap: 12px; }
+.group + .group { border-top: 1px solid var(--line); padding-top: 18px; }
+.group h2 {
+  margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 10.5px; font-stretch: 112.5%;
+  letter-spacing: 0.08em; color: var(--muted);
+}
+.group h2 span { font-family: var(--font-body); letter-spacing: 0; color: var(--text); font-size: var(--s-2); font-weight: 700; margin-left: 6px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > label, .label { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+output { font-family: var(--font-display); font-variant-numeric: tabular-nums; font-size: var(--s-1); color: var(--muted); font-stretch: 87.5%; }
+.scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 10.5px; margin-top: -2px; }
+input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; margin: 0; }
+input[type="range"]::-webkit-slider-runnable-track { height: 3px; background: var(--line); border-radius: 3px; }
+input[type="range"]::-moz-range-track { height: 3px; background: var(--line); border-radius: 3px; }
+input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--text); margin-top: -5.5px; border: 0; }
+input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--text); border: 0; }
+input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+input[type="range"]:disabled { opacity: 0.4; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip, .btn, .switch {
+  font: inherit; color: var(--text); background: transparent; border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 10px; cursor: pointer; line-height: 1.3;
+}
+.chip { display: inline-flex; align-items: baseline; gap: 6px; }
+.chip code { font-family: var(--font-display); font-size: 10.5px; color: var(--muted); font-stretch: 87.5%; }
+.chip[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.chip[aria-checked="true"] code { color: var(--accent); }
+.chip:hover, .btn:hover, .switch:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.chip:focus-visible, .btn:focus-visible, .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.switch { display: inline-flex; align-items: center; gap: 10px; justify-content: space-between; flex: 1 1 120px; }
+.switch i { width: 26px; height: 15px; border-radius: 10px; background: var(--line); position: relative; flex: none; transition: background .15s; }
+.switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }
+.switch[aria-checked="true"] i { background: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.switch[aria-checked="true"] i::after { transform: translateX(11px); background: var(--accent); }
+.btn { flex: 1 1 auto; text-align: center; }
+.btn.primary { background: var(--accent); color: #1b1220; border-color: var(--accent); font-weight: 700; }
+.btn:disabled { opacity: 0.5; cursor: progress; }
+.note { color: var(--muted); font-size: var(--s-1); margin: 0; }
+.toast {
+  position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 20px); opacity: 0;
+  background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: var(--s-2);
+  transition: opacity .2s, transform .2s; pointer-events: none; z-index: 20; max-width: calc(100% - 32px);
+}
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+.modal { position: fixed; inset: 0; display: none; place-items: center; background: rgba(5, 4, 9, 0.6); z-index: 30; padding: 16px; }
+.modal.on { display: grid; }
+.sheet {
+  background: var(--surface); color: var(--text); border: 1px solid var(--line); border-radius: 14px;
+  padding: 18px; width: min(720px, 100%); max-height: calc(100% - 32px); overflow: auto; display: flex; flex-direction: column; gap: 12px;
+}
+.sheet h3 { margin: 0; font-size: var(--s-3); }
+.sheet img { max-width: 100%; border-radius: 8px; display: block; margin: 0 auto; image-rendering: auto; }
+.sheet textarea { width: 100%; height: 320px; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 8px; line-height: 1; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; white-space: pre; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@media (max-width: 760px) {
+  body { grid-template-columns: 1fr; grid-template-rows: minmax(360px, 64vh) auto; overflow: auto; height: auto; min-height: 100%; }
+  .rail { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+  .hud.tl { top: 14px; left: 16px; } .hud.tr { top: 16px; right: 16px; } .hud.bl { left: 16px; right: 16px; }
+  .mark b { font-size: 22px; } .mark span { font-size: 16px; }
+  .hint .keys { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .toast, .switch i, .switch i::after { transition: none; } }
+</style>
+</head>
+<body>
+<main class="stage" id="stage" tabindex="0" aria-label="3D 아스키 렌더 화면. 끌어서 돌리고 화살표 키로도 돌릴 수 있어요.">
+  <canvas id="view"></canvas>
+  <div class="hud tl">
+    <div class="mark"><b>3D</b><span>아스키 메이커</span></div>
+    <div class="sub" id="srcname">기본 이미지 · 토끼</div>
+  </div>
+  <div class="hud tr">
+    <div class="stats" id="stats">—</div>
+    <div class="stats" id="stats2"></div>
+  </div>
+  <div class="hud bl"><div class="hint">끌어서 돌리기 · 휠·핀치로 확대 · 더블클릭으로 처음 각도<span class="keys"> · <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> <kbd>space</kbd></span></div></div>
+  <div class="drop" id="drop"><div>여기에 놓으면 바로 3D로 만들어요<br><span class="note">투명 배경 PNG가 가장 깔끔해요</span></div></div>
+  <div class="busy" id="busy">입체로 부풀리는 중…</div>
+</main>
+
+<aside class="rail" aria-label="설정">
+  <section class="group" aria-labelledby="g1">
+    <h2 id="g1">SHAPE<span>모양</span></h2>
+    <div class="field">
+      <label for="volume">볼륨 <output id="volume-out" for="volume">0.75</output></label>
+      <input type="range" id="volume" min="0.15" max="1.4" step="0.05" value="0.75">
+      <div class="scale"><span>납작한 스티커</span><span>빵빵한 풍선</span></div>
+    </div>
+    <div class="field">
+      <label for="font">글자 크기 <output id="font-out" for="font">10px</output></label>
+      <input type="range" id="font" min="6" max="18" step="1" value="10">
+      <div class="scale"><span>촘촘·디테일</span><span>큼직·레트로</span></div>
+    </div>
+    <div class="field">
+      <label for="zoom">확대 <output id="zoom-out" for="zoom">100%</output></label>
+      <input type="range" id="zoom" min="35" max="300" step="1" value="100">
+    </div>
+  </section>
+
+  <section class="group" aria-labelledby="g2">
+    <h2 id="g2">GLYPHS<span>글자</span></h2>
+    <div class="field">
+      <span class="label" id="lbl-ramp">글자셋</span>
+      <div class="chips" role="radiogroup" aria-labelledby="lbl-ramp" id="ramp">
+        <button class="chip" role="radio" aria-checked="true" data-v="classic">클래식 <code>.:-=+*#%@</code></button>
+        <button class="chip" role="radio" aria-checked="false" data-v="detail">디테일 <code>70자</code></button>
+        <button class="chip" role="radio" aria-checked="false" data-v="block">블록 <code>░▒▓█</code></button>
+        <button class="chip" role="radio" aria-checked="false" data-v="dots">점자 <code>⠃⡇⣧⣿</code></button>
+        <button class="chip" role="radio" aria-checked="false" data-v="binary">바이너리 <code>.10</code></button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="label" id="lbl-mode">색</span>
+      <div class="chips" role="radiogroup" aria-labelledby="lbl-mode" id="mode">
+        <button class="chip" role="radio" aria-checked="true" data-v="color">원본 컬러</button>
+        <button class="chip" role="radio" aria-checked="false" data-v="mono">흑백</button>
+        <button class="chip" role="radio" aria-checked="false" data-v="matrix">매트릭스</button>
+        <button class="chip" role="radio" aria-checked="false" data-v="amber">앰버</button>
+      </div>
+    </div>
+    <div class="field">
+      <span class="label" id="lbl-theme">배경</span>
+      <div class="chips" role="radiogroup" aria-labelledby="lbl-theme" id="theme">
+        <button class="chip" role="radio" aria-checked="true" data-v="dark">다크 · 빛나는 글자</button>
+        <button class="chip" role="radio" aria-checked="false" data-v="paper">페이퍼 · 연필 스케치</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="group" aria-labelledby="g3">
+    <h2 id="g3">LIGHT &amp; MOTION<span>빛·움직임</span></h2>
+    <div class="field">
+      <label for="light">조명 방향 <output id="light-out" for="light">-35°</output></label>
+      <input type="range" id="light" min="-180" max="180" step="5" value="-35">
+      <div class="scale"><span>왼쪽에서</span><span>정면</span><span>오른쪽에서</span></div>
+    </div>
+    <div class="row">
+      <button class="switch" role="switch" aria-checked="true" id="auto"><span>자동 회전</span><i></i></button>
+      <button class="switch" role="switch" aria-checked="true" id="edges"><span>윤곽선</span><i></i></button>
+      <button class="switch" role="switch" aria-checked="true" id="glow"><span>글로우</span><i></i></button>
+    </div>
+    <div class="field">
+      <label for="speed">회전 속도 <output id="speed-out" for="speed">0.55</output></label>
+      <input type="range" id="speed" min="0.1" max="2.5" step="0.05" value="0.55">
+    </div>
+  </section>
+
+  <section class="group" aria-labelledby="g4">
+    <h2 id="g4">IMAGE<span>이미지</span></h2>
+    <div class="row">
+      <button class="btn" id="pick">이미지 바꾸기</button>
+      <button class="btn" id="reset-img">기본 토끼로</button>
+    </div>
+    <input type="file" id="file" accept="image/*" class="sr" tabindex="-1" aria-hidden="true">
+    <div class="field">
+      <label for="tol">배경 제거 감도 <output id="tol-out" for="tol">48</output></label>
+      <input type="range" id="tol" min="8" max="140" step="2" value="48">
+      <p class="note" id="tol-note">투명 배경 이미지라 지금은 쓰지 않아요. 배경이 있는 사진이면 가장자리 색을 기준으로 지워요.</p>
+    </div>
+  </section>
+
+  <section class="group" aria-labelledby="g5">
+    <h2 id="g5">EXPORT<span>내보내기</span></h2>
+    <div class="row">
+      <button class="btn" id="copy">텍스트 복사</button>
+      <button class="btn" id="png">PNG 저장</button>
+    </div>
+    <button class="btn primary" id="gif">360° GIF 만들기</button>
+    <p class="note">GIF는 지금 설정 그대로 한 바퀴(60프레임)를 녹화해요.</p>
+  </section>
+</aside>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="sheet">
+    <h3 id="modal-title">미리보기</h3>
+    <div id="modal-body"></div>
+    <p class="note" id="modal-note"></p>
+    <div class="row">
+      <button class="btn primary" id="modal-save">저장하기</button>
+      <button class="btn" id="modal-close">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const BUNNY_SRC = 'data:image/webp;base64,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';
+
+const RAMPS = {
+  classic: ' .:-=+*#%@',
+  detail: " .'`^\",:;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
+  block: ' ░▒▓█',
+  dots: ' ⠁⠃⠇⡇⣇⣧⣷⣿',
+  binary: ' .10',
+};
+const GLYPH_FONT = '"Martian Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace';
+const PERSP = 4.0;
+const SS = 2;
+const LW = [0.299, 0.587, 0.114];
+const THEMES = {
+  dark: { bg: [13, 11, 20], grain: 0.0 },
+  paper: { bg: [241, 236, 225], grain: 0.035 },
+};
+
+const S = { volume: 0.75, font: (window.innerWidth || 1200) < 640 ? 7 : 10, zoom: 1, ramp: 'classic', mode: 'color', theme: 'dark', light: -35, auto: true, speed: 0.55, edges: true, glow: true, tol: 48 };
+const VIEW0 = { yaw: -0.38, pitch: 0.14 };
+const V = { yaw: VIEW0.yaw, pitch: VIEW0.pitch, vyaw: 0, vpitch: 0 };
+const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (reduceMotion) S.auto = false;
+
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+
+/* ------------------------------------------------------------------ */
+/* 1. image -> mask                                                    */
+/* ------------------------------------------------------------------ */
+function loadImg(src) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error('이미지를 읽지 못했어요'));
+    img.src = src;
+  });
+}
+
+function imageToRGBA(img) {
+  const w0 = img.naturalWidth || img.width, h0 = img.naturalHeight || img.height;
+  const m = Math.max(w0, h0);
+  let sc = Math.min(1, 600 / m);
+  if (m * sc < 360) sc = 360 / m;
+  const w = Math.max(8, Math.round(w0 * sc)), h = Math.max(8, Math.round(h0 * sc));
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(img, 0, 0, w, h);
+  return { w, h, data: ctx.getImageData(0, 0, w, h).data };
+}
+
+function computeMask(rgba, tol) {
+  const { w, h, data } = rgba;
+  const n = w * h;
+  const mask = new Uint8Array(n);
+  let transparent = 0;
+  for (let i = 0; i < n; i++) if (data[i * 4 + 3] < 128) transparent++;
+  if (transparent > n * 0.005) {
+    for (let i = 0; i < n; i++) mask[i] = data[i * 4 + 3] >= 128 ? 1 : 0;
+    return { mask, hadAlpha: true };
+  }
+  // no transparency: flood-fill the background from the border
+  const rs = [], gs = [], bs = [];
+  const pushPx = (x, y) => { const i = (y * w + x) * 4; rs.push(data[i]); gs.push(data[i + 1]); bs.push(data[i + 2]); };
+  for (let x = 0; x < w; x++) { pushPx(x, 0); pushPx(x, h - 1); }
+  for (let y = 0; y < h; y++) { pushPx(0, y); pushPx(w - 1, y); }
+  const med = (a) => { a.sort((p, q) => p - q); return a[a.length >> 1]; };
+  const R = med(rs), G = med(gs), B = med(bs);
+  const t2 = tol * tol;
+  const near = (i) => { const k = i * 4, dr = data[k] - R, dg = data[k + 1] - G, db = data[k + 2] - B; return dr * dr + dg * dg + db * db <= t2; };
+  const bgm = new Uint8Array(n);
+  const q = new Int32Array(n);
+  let qh = 0, qt = 0;
+  const seed = (i) => { if (!bgm[i] && near(i)) { bgm[i] = 1; q[qt++] = i; } };
+  for (let x = 0; x < w; x++) { seed(x); seed((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { seed(y * w); seed(y * w + w - 1); }
+  while (qh < qt) {
+    const i = q[qh++], x = i % w, y = (i / w) | 0;
+    if (x > 0) seed(i - 1);
+    if (x < w - 1) seed(i + 1);
+    if (y > 0) seed(i - w);
+    if (y < h - 1) seed(i + w);
+  }
+  let cnt = 0;
+  for (let i = 0; i < n; i++) { mask[i] = bgm[i] ? 0 : 1; cnt += mask[i]; }
+  if (cnt < n * 0.01 || cnt > n * 0.985) { mask.fill(1); return { mask, hadAlpha: false }; }
+  // drop specks: keep components at least 2% of the largest
+  const lab = new Int32Array(n);
+  const sizes = [0];
+  let cur = 0;
+  for (let s = 0; s < n; s++) {
+    if (!mask[s] || lab[s]) continue;
+    cur++;
+    let size = 0;
+    qh = 0; qt = 0; q[qt++] = s; lab[s] = cur;
+    while (qh < qt) {
+      const i = q[qh++], x = i % w, y = (i / w) | 0;
+      size++;
+      if (x > 0 && mask[i - 1] && !lab[i - 1]) { lab[i - 1] = cur; q[qt++] = i - 1; }
+      if (x < w - 1 && mask[i + 1] && !lab[i + 1]) { lab[i + 1] = cur; q[qt++] = i + 1; }
+      if (y > 0 && mask[i - w] && !lab[i - w]) { lab[i - w] = cur; q[qt++] = i - w; }
+      if (y < h - 1 && mask[i + w] && !lab[i + w]) { lab[i + w] = cur; q[qt++] = i + w; }
+    }
+    sizes.push(size);
+  }
+  let big = 0;
+  for (const z of sizes) if (z > big) big = z;
+  for (let i = 0; i < n; i++) if (mask[i] && sizes[lab[i]] < big * 0.02) mask[i] = 0;
+  return { mask, hadAlpha: false };
+}
+
+/* ------------------------------------------------------------------ */
+/* 2. texture prep: keep line art, paint over the outer outline        */
+/* ------------------------------------------------------------------ */
+function chamfer(mask, w, h) {
+  const n = w * h, D = new Float32Array(n), s2 = Math.SQRT2;
+  for (let i = 0; i < n; i++) D[i] = mask[i] ? 1e9 : 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    if (D[i] === 0) continue;
+    let v = D[i];
+    v = Math.min(v, x > 0 ? D[i - 1] + 1 : 1);
+    if (y > 0) {
+      v = Math.min(v, D[i - w] + 1);
+      v = Math.min(v, x > 0 ? D[i - w - 1] + s2 : 1);
+      v = Math.min(v, x < w - 1 ? D[i - w + 1] + s2 : 1);
+    } else v = Math.min(v, 1);
+    D[i] = v;
+  }
+  for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) {
+    const i = y * w + x;
+    if (D[i] === 0) continue;
+    let v = D[i];
+    v = Math.min(v, x < w - 1 ? D[i + 1] + 1 : 1);
+    if (y < h - 1) {
+      v = Math.min(v, D[i + w] + 1);
+      v = Math.min(v, x < w - 1 ? D[i + w + 1] + s2 : 1);
+      v = Math.min(v, x > 0 ? D[i + w - 1] + s2 : 1);
+    } else v = Math.min(v, 1);
+    D[i] = v;
+  }
+  return D;
+}
+
+function prepTexture(rgba, mask) {
+  const { w, h, data } = rgba;
+  const n = w * h;
+  const ink = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    const k = i * 4;
+    const l = (LW[0] * data[k] + LW[1] * data[k + 1] + LW[2] * data[k + 2]) / 255;
+    ink[i] = mask[i] && l < 0.36 ? 1 : 0;
+  }
+  const D = chamfer(mask, w, h);
+  // outline thickness = deepest distance ring that is still mostly ink
+  const hc = new Float32Array(40), hi = new Float32Array(40);
+  for (let i = 0; i < n; i++) if (mask[i]) { const d = Math.round(D[i]); if (d < 40) { hc[d]++; hi[d] += ink[i]; } }
+  let tOut = 0;
+  for (let d = 1; d < 30; d++) { if (!hc[d]) break; if (hi[d] / hc[d] >= 0.5) tOut = d; else break; }
+  if (tOut > 0) tOut += 1;
+  const src = new Uint8Array(n);
+  let nsrc = 0;
+  for (let i = 0; i < n; i++) if (mask[i] && !ink[i] && D[i] > 1.5) { src[i] = 1; nsrc++; }
+  if (nsrc < 10) { for (let i = 0; i < n; i++) src[i] = mask[i]; tOut = 0; }
+  // nearest source colour for every pixel (multi-source BFS)
+  const near = new Uint8Array(n * 3), seen = new Uint8Array(n), q = new Int32Array(n);
+  let qh = 0, qt = 0;
+  for (let i = 0; i < n; i++) if (src[i]) { seen[i] = 1; q[qt++] = i; near[i * 3] = data[i * 4]; near[i * 3 + 1] = data[i * 4 + 1]; near[i * 3 + 2] = data[i * 4 + 2]; }
+  while (qh < qt) {
+    const i = q[qh++], x = i % w, y = (i / w) | 0;
+    const nb = [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1];
+    for (const j of nb) {
+      if (j < 0 || seen[j]) continue;
+      seen[j] = 1;
+      near[j * 3] = near[i * 3]; near[j * 3 + 1] = near[i * 3 + 1]; near[j * 3 + 2] = near[i * 3 + 2];
+      q[qt++] = j;
+    }
+  }
+  const tex = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const band = tOut > 0 && ink[i] && D[i] <= tOut + 0.5;
+    if (!mask[i] || band) { tex[i * 3] = near[i * 3] / 255; tex[i * 3 + 1] = near[i * 3 + 1] / 255; tex[i * 3 + 2] = near[i * 3 + 2] / 255; }
+    else { tex[i * 3] = data[i * 4] / 255; tex[i * 3 + 1] = data[i * 4 + 1] / 255; tex[i * 3 + 2] = data[i * 4 + 2] / 255; }
+  }
+  // back colour = dominant interior colour
+  const hist = new Map();
+  for (let i = 0; i < n; i++) if (src[i]) {
+    const k = ((data[i * 4] >> 4) << 8) | ((data[i * 4 + 1] >> 4) << 4) | (data[i * 4 + 2] >> 4);
+    hist.set(k, (hist.get(k) || 0) + 1);
+  }
+  let bestK = -1, bestC = -1;
+  for (const [k, c] of hist) if (c > bestC) { bestC = c; bestK = k; }
+  let br = 0, bgc = 0, bb = 0, bn = 0;
+  for (let i = 0; i < n; i++) if (src[i]) {
+    const k = ((data[i * 4] >> 4) << 8) | ((data[i * 4 + 1] >> 4) << 4) | (data[i * 4 + 2] >> 4);
+    if (k === bestK) { br += data[i * 4]; bgc += data[i * 4 + 1]; bb += data[i * 4 + 2]; bn++; }
+  }
+  const back = bn ? [br / bn / 255, bgc / bn / 255, bb / bn / 255] : [0.9, 0.9, 0.9];
+  return { tex, back };
+}
+
+/* ------------------------------------------------------------------ */
+/* 3. grid + Poisson inflation (coarse-to-fine red/black SOR)          */
+/* ------------------------------------------------------------------ */
+function toGrid(rgba, mask, tex, G) {
+  const { w, h } = rgba;
+  let x0 = w, x1 = 0, y0 = h, y1 = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (mask[y * w + x]) {
+    if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+  }
+  x1 += 1; y1 += 1;
+  const size = Math.max(x1 - x0, y1 - y0);
+  const f = Math.max(1, Math.round(size / G));
+  const mg = 2 * f;
+  const X0 = x0 - mg, Y0 = y0 - mg;
+  const gw = Math.ceil((x1 - x0 + 2 * mg) / f), gh = Math.ceil((y1 - y0 + 2 * mg) / f);
+  const gm = new Uint8Array(gw * gh), gt = new Float32Array(gw * gh * 3);
+  const ff = f * f;
+  for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+    let m = 0, r = 0, g = 0, b = 0;
+    for (let dy = 0; dy < f; dy++) for (let dx = 0; dx < f; dx++) {
+      const px = X0 + gx * f + dx, py = Y0 + gy * f + dy;
+      const inside = px >= 0 && py >= 0 && px < w && py < h && mask[py * w + px];
+      m += inside ? 1 : 0;
+      const k = (clamp(py, 0, h - 1) * w + clamp(px, 0, w - 1)) * 3;
+      r += tex[k]; g += tex[k + 1]; b += tex[k + 2];
+    }
+    const i = gy * gw + gx;
+    gm[i] = m * 2 >= ff ? 1 : 0;
+    gt[i * 3] = r / ff; gt[i * 3 + 1] = g / ff; gt[i * 3 + 2] = b / ff;
+  }
+  return { gw, gh, f, X0, Y0, gm, gt, x0, x1, y0, y1, size };
+}
+
+function sor(u, m, w, h, iters) {
+  const om = 1.85;
+  for (let it = 0; it < iters; it++) for (let par = 0; par < 2; par++) for (let y = 0; y < h; y++) {
+    const row = y * w;
+    for (let x = (y + par) & 1; x < w; x += 2) {
+      const i = row + x;
+      if (!m[i]) continue;
+      const l = x > 0 ? u[i - 1] : 0, r = x < w - 1 ? u[i + 1] : 0;
+      const t = y > 0 ? u[i - w] : 0, b = y < h - 1 ? u[i + w] : 0;
+      u[i] += om * ((l + r + t + b + 1) * 0.25 - u[i]);
+    }
+  }
+}
+
+function poisson(mask, w, h) {
+  const levels = [{ m: mask, w, h }];
+  while (Math.min(levels[levels.length - 1].w, levels[levels.length - 1].h) > 24) {
+    const L = levels[levels.length - 1];
+    const w2 = (L.w + 1) >> 1, h2 = (L.h + 1) >> 1;
+    const m2 = new Uint8Array(w2 * h2);
+    for (let y = 0; y < h2; y++) for (let x = 0; x < w2; x++) {
+      let s = 0;
+      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+        const xx = 2 * x + dx, yy = 2 * y + dy;
+        if (xx < L.w && yy < L.h) s += L.m[yy * L.w + xx];
+      }
+      m2[y * w2 + x] = s >= 2 ? 1 : 0;
+    }
+    levels.push({ m: m2, w: w2, h: h2 });
+  }
+  let u = null;
+  for (let li = levels.length - 1; li >= 0; li--) {
+    const L = levels[li];
+    if (!u) u = new Float32Array(L.w * L.h);
+    else {
+      const C = levels[li + 1], uu = new Float32Array(L.w * L.h);
+      for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) uu[y * L.w + x] = u[(y >> 1) * C.w + (x >> 1)] * 4;
+      u = uu;
+    }
+    for (let i = 0; i < u.length; i++) if (!L.m[i]) u[i] = 0;
+    sor(u, L.m, L.w, L.h, li === levels.length - 1 ? 160 : 60);
+  }
+  return u;
+}
+
+/* ------------------------------------------------------------------ */
+/* 4. point model                                                      */
+/* ------------------------------------------------------------------ */
+function buildPoints(P, volume) {
+  const { gw, gh, f, X0, Y0, gm, gt, u, back } = P;
+  const n = gw * gh;
+  const cx = (P.x0 + P.x1) / 2, cy = (P.y0 + P.y1) / 2;
+  const scale = 2 / P.size, dx = f * scale;
+  const Z = new Float32Array(n);
+  for (let i = 0; i < n; i++) Z[i] = gm[i] ? 2 * Math.sqrt(Math.max(u[i], 0)) * dx * volume : 0;
+  const region = new Uint8Array(n);
+  const NX = new Float32Array(n), NY = new Float32Array(n), NZ = new Float32Array(n), ZMIN = new Float32Array(n);
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+    const i = y * gw + x;
+    region[i] = gm[i] || (x > 0 && gm[i - 1]) || (x < gw - 1 && gm[i + 1]) || (y > 0 && gm[i - gw]) || (y < gh - 1 && gm[i + gw]) ? 1 : 0;
+    const zl = x > 0 ? Z[i - 1] : Z[i], zr = x < gw - 1 ? Z[i + 1] : Z[i];
+    const zt = y > 0 ? Z[i - gw] : Z[i], zb = y < gh - 1 ? Z[i + gw] : Z[i];
+    const gx = (zr - zl) / ((x > 0 && x < gw - 1) ? 2 * dx : dx);
+    const gy = (zb - zt) / ((y > 0 && y < gh - 1) ? 2 * dx : dx);
+    const ax = -gx, ay = gy, len = Math.hypot(ax, ay, 1);
+    NX[i] = ax / len; NY[i] = ay / len; NZ[i] = 1 / len;
+    ZMIN[i] = Math.min(x > 0 ? Z[i - 1] : 0, x < gw - 1 ? Z[i + 1] : 0, y > 0 ? Z[i - gw] : 0, y < gh - 1 ? Z[i + gw] : 0);
+  }
+  const step = dx * 0.75;
+  let count = 0;
+  for (let i = 0; i < n; i++) {
+    if (!region[i]) continue;
+    count += 2;
+    if (gm[i]) { const gap = Z[i] - ZMIN[i]; if (gap > step) count += 2 * (Math.ceil(gap / step) - 1); }
+  }
+  const PP = new Float32Array(count * 3), NN = new Float32Array(count * 3), CC = new Float32Array(count * 3), INK = new Uint8Array(count);
+  let k = 0;
+  const put = (x, y, z, nx, ny, nz, r, g, b, ink) => {
+    const o = k * 3;
+    PP[o] = x; PP[o + 1] = y; PP[o + 2] = z;
+    NN[o] = nx; NN[o + 1] = ny; NN[o + 2] = nz;
+    CC[o] = r; CC[o + 1] = g; CC[o + 2] = b;
+    INK[k] = ink; k++;
+  };
+  for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+    const i = y * gw + x;
+    if (!region[i]) continue;
+    const X = (X0 + (x + 0.5) * f - cx) * scale, Y = -(Y0 + (y + 0.5) * f - cy) * scale;
+    const r = gt[i * 3], g = gt[i * 3 + 1], b = gt[i * 3 + 2];
+    const ink = (LW[0] * r + LW[1] * g + LW[2] * b) < 0.33 ? 1 : 0;
+    put(X, Y, Z[i], NX[i], NY[i], NZ[i], r, g, b, ink);
+    put(X, Y, -Z[i], NX[i], NY[i], -NZ[i], back[0], back[1], back[2], 0);
+    if (!gm[i]) continue;
+    const gap = Z[i] - ZMIN[i];
+    if (gap <= step) continue;
+    const kk = Math.ceil(gap / step);
+    for (let j = 1; j < kk; j++) {
+      const zz = ZMIN[i] + gap * (j / kk);
+      const fz = NZ[i] * clamp(zz / Math.max(Z[i], 1e-9), 0, 1);
+      const len = Math.hypot(NX[i], NY[i], fz) || 1;
+      put(X, Y, zz, NX[i] / len, NY[i] / len, fz / len, r, g, b, ink);
+      put(X, Y, -zz, NX[i] / len, NY[i] / len, -fz / len, back[0], back[1], back[2], 0);
+    }
+  }
+  // spin around the mass centre (x) and the vertical middle (y)
+  let sw = 0, sx = 0, ymin = 1e9, ymax = -1e9;
+  for (let i = 0; i < count; i++) {
+    const wz = Math.abs(PP[i * 3 + 2]) + 1e-6;
+    sw += wz; sx += PP[i * 3] * wz;
+    ymin = Math.min(ymin, PP[i * 3 + 1]); ymax = Math.max(ymax, PP[i * 3 + 1]);
+  }
+  const mx = sx / sw, my = (ymin + ymax) / 2;
+  let rmax = 0;
+  for (let i = 0; i < count; i++) {
+    PP[i * 3] -= mx; PP[i * 3 + 1] -= my;
+    rmax = Math.max(rmax, Math.hypot(PP[i * 3], PP[i * 3 + 1], PP[i * 3 + 2]));
+  }
+  const M = { n: count, P: PP, N: NN, C: CC, INK, dx, rmax };
+  M.fit = fitExtent(M);
+  return M;
+}
+
+function rotMat(yaw, pitch) {
+  const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+  // Rx(pitch) * Ry(yaw)
+  return [cy, 0, sy, sp * sy, cp, -sp * cy, -cp * sy, sp, cp * cy];
+}
+
+function fitExtent(M) {
+  let xmax = 0, ymin = 0, ymax = 0;
+  const P = M.P;
+  for (const pitch of [0, 0.3]) for (let s = 0; s < 36; s++) {
+    const R = rotMat(2 * Math.PI * s / 36, pitch);
+    for (let i = 0; i < M.n; i += 7) {
+      const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2];
+      const X = R[0] * x + R[1] * y + R[2] * z, Y = R[3] * x + R[4] * y + R[5] * z, Zc = R[6] * x + R[7] * y + R[8] * z;
+      const sc = PERSP / (PERSP - Zc);
+      xmax = Math.max(xmax, Math.abs(X * sc)); ymin = Math.min(ymin, Y * sc); ymax = Math.max(ymax, Y * sc);
+    }
+  }
+  return { xmax, ymin, ymax };
+}
+
+/* ------------------------------------------------------------------ */
+/* 5. render points -> character cells                                 */
+/* ------------------------------------------------------------------ */
+function makeRenderCtx() { return { W: 0, H: 0, cols: 0, rows: 0 }; }
+
+function ensureBuffers(rc, cols, rows) {
+  if (rc.cols === cols && rc.rows === rows) return;
+  rc.cols = cols; rc.rows = rows; rc.W = cols * SS; rc.H = rows * SS;
+  const nsub = rc.W * rc.H, nc = cols * rows;
+  rc.zbuf = new Float32Array(nsub); rc.ibuf = new Int32Array(nsub);
+  rc.cr = new Float32Array(nc); rc.cg = new Float32Array(nc); rc.cb = new Float32Array(nc);
+  rc.tr = new Float32Array(nc); rc.tg = new Float32Array(nc); rc.tb = new Float32Array(nc);
+  rc.cnt = new Uint8Array(nc); rc.inkc = new Uint8Array(nc); rc.zmax = new Float32Array(nc); rc.lsum = new Float32Array(nc);
+  rc.glyph = new Uint8Array(nc); rc.rgb = new Uint8Array(nc * 3); rc.bright = new Float32Array(nc);
+}
+
+function lightDir() {
+  const a = S.light * Math.PI / 180, e = 35 * Math.PI / 180;
+  return [Math.cos(e) * Math.sin(a), Math.sin(e), Math.cos(e) * Math.cos(a)];
+}
+
+function renderCells(M, rc, cols, rows, aspect, view, opts) {
+  ensureBuffers(rc, cols, rows);
+  const { W, H, zbuf, ibuf } = rc;
+  zbuf.fill(-1e9); ibuf.fill(-1);
+  const R = rotMat(view.yaw, view.pitch);
+  const physW = cols, physH = rows / aspect;
+  const { xmax, ymin, ymax } = M.fit;
+  const yc = (ymin + ymax) / 2;
+  const Sc = view.zoom * 0.95 * Math.min(physW / 2 / xmax, physH / (ymax - ymin));
+  const sp = M.dx * (PERSP / (PERSP - M.rmax)) * Sc * SS;
+  const kx = Math.max(1, Math.ceil(sp * 1.05)), ky = Math.max(1, Math.ceil(sp * aspect * 1.05));
+  const ox = (kx - 1) / 2, oy = (ky - 1) / 2;
+  const P = M.P, n = M.n;
+  const hw = physW / 2, hh = physH / 2;
+  const R0 = R[0], R1 = R[1], R2 = R[2], R3 = R[3], R4 = R[4], R5 = R[5], R6 = R[6], R7 = R[7], R8 = R[8];
+  for (let i = 0; i < n; i++) {
+    const o = i * 3, x = P[o], y = P[o + 1], z = P[o + 2];
+    const Zc = R6 * x + R7 * y + R8 * z;
+    const s = PERSP / (PERSP - Zc);
+    const X = (R0 * x + R1 * y + R2 * z) * s, Y = (R3 * x + R4 * y + R5 * z) * s;
+    const u = (X * Sc + hw) * SS - ox;
+    const v = (-(Y - yc) * Sc + hh) * aspect * SS - oy;
+    const iu0 = Math.floor(u), iv0 = Math.floor(v);
+    if (iu0 >= W || iv0 >= H || iu0 + kx <= 0 || iv0 + ky <= 0) continue;
+    for (let a = 0; a < ky; a++) {
+      const iv = iv0 + a;
+      if (iv < 0 || iv >= H) continue;
+      const row = iv * W;
+      for (let b = 0; b < kx; b++) {
+        const iu = iu0 + b;
+        if (iu < 0 || iu >= W) continue;
+        const k = row + iu;
+        if (Zc > zbuf[k]) { zbuf[k] = Zc; ibuf[k] = i; }
+      }
+    }
+  }
+  // shade visible samples and gather per cell
+  const nc = cols * rows;
+  const { cr, cg, cb, tr, tg, tb, cnt, inkc, zmax, lsum } = rc;
+  cr.fill(0); cg.fill(0); cb.fill(0); tr.fill(0); tg.fill(0); tb.fill(0); cnt.fill(0); inkc.fill(0); zmax.fill(-9); lsum.fill(0);
+  const L = lightDir();
+  let hx = L[0], hy = L[1], hz = L[2] + 1;
+  const hl = Math.hypot(hx, hy, hz); hx /= hl; hy /= hl; hz /= hl;
+  const NN = M.N, CC = M.C, INK = M.INK;
+  for (let iv = 0; iv < H; iv++) {
+    const crow = (iv >> 1) * cols;
+    for (let iu = 0; iu < W; iu++) {
+      const k = iv * W + iu, i = ibuf[k];
+      if (i < 0) continue;
+      const o = i * 3;
+      const nx0 = NN[o], ny0 = NN[o + 1], nz0 = NN[o + 2];
+      const nX = R0 * nx0 + R1 * ny0 + R2 * nz0, nY = R3 * nx0 + R4 * ny0 + R5 * nz0, nZ = R6 * nx0 + R7 * ny0 + R8 * nz0;
+      const ndl = nX * L[0] + nY * L[1] + nZ * L[2];
+      const diff = ndl > 0 ? ndl : 0;
+      const wrap = clamp((ndl + 0.35) / 1.35, 0, 1);
+      const ndh = nX * hx + nY * hy + nZ * hz;
+      const spec = ndh > 0 ? Math.pow(ndh, 48) : 0;
+      const rz = 1 - clamp(nZ, 0, 1), rim = rz * rz * rz;
+      const shade = 0.28 + 0.42 * wrap + 0.38 * diff;
+      const c = crow + (iu >> 1);
+      const r = CC[o], g = CC[o + 1], b = CC[o + 2];
+      cr[c] += r * shade + 0.16 * spec + 0.12 * rim * r;
+      cg[c] += g * shade + 0.16 * spec + 0.12 * rim * g;
+      cb[c] += b * shade + 0.16 * spec + 0.12 * rim * b;
+      tr[c] += r; tg[c] += g; tb[c] += b;
+      cnt[c]++; inkc[c] += INK[i];
+      if (zbuf[k] > zmax[c]) zmax[c] = zbuf[k];
+      lsum[c] += shade + 0.16 * spec;
+    }
+  }
+  mapCells(rc, cols, rows, opts);
+}
+
+function inkTone(r, g, b) {
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  let R = l + (r - l) * 1.35, G = l + (g - l) * 1.35, B = l + (b - l) * 1.35;
+  const sc = l > 0.52 ? 0.52 / l : 1;
+  return [clamp(R * sc, 0, 1), clamp(G * sc, 0, 1), clamp(B * sc, 0, 1)];
+}
+
+function mapCells(rc, cols, rows, opts) {
+  const ramp = opts.ramp, nr = ramp.length;
+  const { cr, cg, cb, tr, tg, tb, cnt, inkc, zmax, glyph, rgb, bright } = rc;
+  const paper = opts.theme === 'paper';
+  const q = SS * SS;
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    const c = y * cols + x, n = cnt[c];
+    if (!n) { glyph[c] = 0; bright[c] = 0; rgb[c * 3] = rgb[c * 3 + 1] = rgb[c * 3 + 2] = 0; continue; }
+    const cov = n / q;
+    let r = cr[c] / n, g = cg[c] / n, b = cb[c] / n;
+    const t0 = tr[c] / n, t1 = tg[c] / n, t2 = tb[c] / n;
+    const lum = clamp(LW[0] * r + LW[1] * g + LW[2] * b, 0, 1);
+    const tlum = LW[0] * t0 + LW[1] * t1 + LW[2] * t2;
+    const ink = inkc[c] / q >= 0.25 && tlum < 0.55;
+    const d = zmax[c];
+    const nU = y > 0 ? zmax[c - cols] : -9, nD = y < rows - 1 ? zmax[c + cols] : -9;
+    const nL = x > 0 ? zmax[c - 1] : -9, nR = x < cols - 1 ? zmax[c + 1] : -9;
+    const occ = Math.max(nU, nD, nL, nR) - d > 0.12;
+    const sil = (y === 0 || !cnt[c - cols]) || (y === rows - 1 || !cnt[c + cols]) || (x === 0 || !cnt[c - 1]) || (x === cols - 1 || !cnt[c + 1]);
+    let bv;
+    if (paper) {
+      let dk = Math.pow(clamp(1 - lum, 0, 1), 1.25) * 0.92 + 0.06;
+      if (ink) dk = Math.max(dk, 0.92);
+      if (opts.edges && (occ || sil)) dk = Math.max(dk, 0.85);
+      bv = dk * clamp(cov * 1.25, 0, 1);
+    } else {
+      bv = Math.pow(clamp(lum / 1.06, 0, 1), 1.3) * clamp(cov * 1.15, 0, 1);
+    }
+    let gi = clamp(Math.floor(bv * (nr - 1) + 0.5), 0, nr - 1);
+    if (nr > 2) gi = Math.max(gi, 1);
+    if (!paper && (ink || (opts.edges && occ))) gi = 0;
+    glyph[c] = gi;
+    bright[c] = bv;
+    let R, G, B;
+    if (paper) {
+      if (opts.mode === 'color') {
+        if (ink || (opts.edges && (occ || sil))) { R = 0.10; G = 0.08; B = 0.12; }
+        else [R, G, B] = inkTone(t0, t1, t2);
+      } else if (opts.mode === 'matrix') { R = 0.05; G = 0.42; B = 0.18; }
+      else if (opts.mode === 'amber') { R = 0.62; G = 0.32; B = 0.02; }
+      else { R = 0.10; G = 0.09; B = 0.12; }
+    } else if (opts.mode === 'color') {
+      const mx = Math.max(r, g, b, 1e-6), lift = clamp(mx * 0.55 + 0.45, 0, 1);
+      R = r / mx * lift; G = g / mx * lift; B = b / mx * lift;
+      const l = (Math.max(R, G, B) + Math.min(R, G, B)) / 2; // gentle saturation lift
+      R = clamp(l + (R - l) * 1.3, 0, 1); G = clamp(l + (G - l) * 1.3, 0, 1); B = clamp(l + (B - l) * 1.3, 0, 1);
+    } else if (opts.mode === 'matrix') { const v = clamp(0.25 + bv * 0.9, 0, 1); R = v * 0.25; G = v; B = v * 0.35; }
+    else if (opts.mode === 'amber') { const v = clamp(0.25 + bv * 0.9, 0, 1); R = v; G = v * 0.68; B = v * 0.12; }
+    else { const v = clamp(0.35 + bv * 0.75, 0, 1); R = G = B = v; }
+    rgb[c * 3] = R * 255 + 0.5; rgb[c * 3 + 1] = G * 255 + 0.5; rgb[c * 3 + 2] = B * 255 + 0.5;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 6. glyph atlas                                                      */
+/* ------------------------------------------------------------------ */
+function drawGlyph(ctx, ch, x0, cw, chH, fontPx) {
+  const cp = ch.codePointAt(0);
+  if (ch === ' ') return;
+  if (cp >= 0x2591 && cp <= 0x2593) {
+    const lvl = cp - 0x2590; // 1..3
+    const blk = Math.max(1, Math.round(fontPx / 7));
+    for (let y = 0; y < chH; y += blk) for (let x = 0; x < cw; x += blk) {
+      const bx = Math.floor(x / blk), by = Math.floor(y / blk);
+      const on = lvl === 1 ? (bx % 2 === 0 && by % 2 === 0) : lvl === 2 ? ((bx + by) % 2 === 0) : !(bx % 2 === 1 && by % 2 === 1);
+      if (on) ctx.fillRect(x0 + x, y, blk, blk);
+    }
+    return;
+  }
+  if (cp === 0x2588) { ctx.fillRect(x0, 0, cw, chH); return; }
+  if (cp >= 0x2800 && cp <= 0x28ff) {
+    const bits = cp - 0x2800;
+    const pos = [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [0, 3], [1, 3]];
+    const rad = Math.max(0.6, Math.min(cw / 4, chH / 8) * 0.72);
+    for (let b = 0; b < 8; b++) if (bits & (1 << b)) {
+      ctx.beginPath();
+      ctx.arc(x0 + cw * (0.3 + 0.4 * pos[b][0]), chH * (0.14 + 0.24 * pos[b][1]), rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return;
+  }
+  ctx.fillText(ch, x0 + cw / 2, chH / 2 + fontPx * 0.04);
+}
+
+function buildAtlas(ramp, cw, chH, fontPx) {
+  const glyphs = Array.from(ramp);
+  const c = document.createElement('canvas');
+  c.width = Math.max(1, glyphs.length * cw); c.height = chH;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.clearRect(0, 0, c.width, c.height);
+  ctx.fillStyle = '#fff';
+  ctx.font = `600 ${fontPx}px ${GLYPH_FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  glyphs.forEach((g, i) => drawGlyph(ctx, g, i * cw, cw, chH, fontPx));
+  return { canvas: c, ctx, n: glyphs.length, glyphs };
+}
+
+function measureCell(fontPx) {
+  const c = document.createElement('canvas').getContext('2d');
+  c.font = `600 ${fontPx}px ${GLYPH_FONT}`;
+  const cw = Math.max(2, Math.round(c.measureText('M').width));
+  const ch = Math.max(3, Math.round(fontPx * 1.12));
+  return { cw, ch };
+}
+
+/* ------------------------------------------------------------------ */
+/* 7. output: WebGL (one full-screen pass), 2D fallback                */
+/* ------------------------------------------------------------------ */
+const VS = 'attribute vec2 p; void main(){ gl_Position = vec4(p, 0.0, 1.0); }';
+const FS = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+uniform sampler2D uCells; uniform sampler2D uGlow; uniform sampler2D uAtlas;
+uniform vec2 uGrid; uniform vec2 uCell; uniform vec2 uOff; uniform float uGlyphs; uniform float uH;
+uniform vec3 uBg; uniform float uGlowAmt; uniform float uGrain;
+void main(){
+  vec2 p = vec2(gl_FragCoord.x, uH - gl_FragCoord.y) - uOff;
+  vec2 cell = floor(p / uCell);
+  vec3 col = uBg;
+  if (uGlowAmt > 0.0) {
+    vec2 g = p / uCell / uGrid; vec2 d = 1.0 / uGrid;
+    vec3 gl = texture2D(uGlow, g).rgb * 0.36
+      + (texture2D(uGlow, g + vec2(1.6, 0.0) * d).rgb + texture2D(uGlow, g - vec2(1.6, 0.0) * d).rgb
+      +  texture2D(uGlow, g + vec2(0.0, 1.2) * d).rgb + texture2D(uGlow, g - vec2(0.0, 1.2) * d).rgb) * 0.16;
+    col += gl * uGlowAmt;
+  }
+  if (cell.x >= 0.0 && cell.y >= 0.0 && cell.x < uGrid.x && cell.y < uGrid.y) {
+    vec4 c = texture2D(uCells, (cell + 0.5) / uGrid);
+    float gi = floor(c.a * 255.0 + 0.5);
+    if (gi > 0.5) {
+      vec2 lp = p - cell * uCell;
+      vec2 auv = vec2((gi * uCell.x + lp.x) / (uGlyphs * uCell.x), lp.y / uCell.y);
+      float a = texture2D(uAtlas, auv).a;
+      col = mix(col, c.rgb, a);
+    }
+  }
+  if (uGrain > 0.0) {
+    float nz = fract(sin(dot(floor(gl_FragCoord.xy / 1.5), vec2(12.9898, 78.233))) * 43758.5453);
+    col += (nz - 0.5) * uGrain;
+  }
+  gl_FragColor = vec4(col, 1.0);
+}`;
+
+function initGL(canvas) {
+  let gl = null;
+  try { gl = canvas.getContext('webgl', { antialias: false, alpha: false, preserveDrawingBuffer: true, premultipliedAlpha: false }); } catch (e) { gl = null; }
+  if (!gl) return null;
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS));
+  gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  const buf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'p');
+  gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const U = {};
+  for (const name of ['uCells', 'uGlow', 'uAtlas', 'uGrid', 'uCell', 'uOff', 'uGlyphs', 'uH', 'uBg', 'uGlowAmt', 'uGrain']) U[name] = gl.getUniformLocation(prog, name);
+  const mkTex = (filter) => {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  };
+  const tCells = mkTex(gl.NEAREST), tGlow = mkTex(gl.LINEAR), tAtlas = mkTex(gl.NEAREST);
+  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  gl.uniform1i(U.uCells, 0); gl.uniform1i(U.uGlow, 1); gl.uniform1i(U.uAtlas, 2);
+  let cellBytes = null, glowBytes = null;
+  return {
+    kind: 'webgl',
+    setAtlas(atlas) {
+      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, tAtlas);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas.canvas);
+      gl.uniform1f(U.uGlyphs, atlas.n);
+    },
+    draw(rc, lay, opts) {
+      const { cols, rows } = rc, nc = cols * rows;
+      if (!cellBytes || cellBytes.length !== nc * 4) { cellBytes = new Uint8Array(nc * 4); glowBytes = new Uint8Array(nc * 4); }
+      const glowOn = opts.glow && opts.theme === 'dark';
+      for (let c = 0; c < nc; c++) {
+        const r = rc.rgb[c * 3], g = rc.rgb[c * 3 + 1], b = rc.rgb[c * 3 + 2];
+        cellBytes[c * 4] = r; cellBytes[c * 4 + 1] = g; cellBytes[c * 4 + 2] = b; cellBytes[c * 4 + 3] = rc.glyph[c];
+        if (glowOn) {
+          const k = rc.glyph[c] ? 0.2 + 0.6 * rc.bright[c] : 0;
+          glowBytes[c * 4] = Math.min(255, r * k); glowBytes[c * 4 + 1] = Math.min(255, g * k); glowBytes[c * 4 + 2] = Math.min(255, b * k); glowBytes[c * 4 + 3] = 255;
+        }
+      }
+      gl.viewport(0, 0, lay.devW, lay.devH);
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tCells);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, cellBytes);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, tGlow);
+      if (glowOn) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, glowBytes);
+      gl.uniform2f(U.uGrid, cols, rows);
+      gl.uniform2f(U.uCell, lay.cw, lay.ch);
+      gl.uniform2f(U.uOff, lay.offX, lay.offY);
+      gl.uniform1f(U.uH, lay.devH);
+      const th = THEMES[opts.theme];
+      gl.uniform3f(U.uBg, th.bg[0] / 255, th.bg[1] / 255, th.bg[2] / 255);
+      gl.uniform1f(U.uGlowAmt, glowOn ? 0.55 : 0);
+      gl.uniform1f(U.uGrain, th.grain);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    },
+  };
+}
+
+function init2D(canvas) {
+  const ctx = canvas.getContext('2d');
+  return {
+    kind: '2d',
+    setAtlas() {},
+    draw(rc, lay, opts) {
+      const th = THEMES[opts.theme];
+      ctx.fillStyle = `rgb(${th.bg.join(',')})`;
+      ctx.fillRect(0, 0, lay.devW, lay.devH);
+      ctx.font = `600 ${lay.fontPx}px ${GLYPH_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const groups = new Map();
+      for (let c = 0; c < rc.cols * rc.rows; c++) {
+        if (!rc.glyph[c]) continue;
+        const key = ((rc.rgb[c * 3] >> 3) << 10) | ((rc.rgb[c * 3 + 1] >> 3) << 5) | (rc.rgb[c * 3 + 2] >> 3);
+        let g = groups.get(key);
+        if (!g) groups.set(key, (g = []));
+        g.push(c);
+      }
+      for (const [key, list] of groups) {
+        ctx.fillStyle = `rgb(${((key >> 10) & 31) << 3},${((key >> 5) & 31) << 3},${(key & 31) << 3})`;
+        for (const c of list) {
+          const x = c % rc.cols, y = (c / rc.cols) | 0;
+          ctx.fillText(opts.ramp[rc.glyph[c]], lay.offX + x * lay.cw + lay.cw / 2, lay.offY + y * lay.ch + lay.ch / 2);
+        }
+      }
+    },
+  };
+}
+
+/* ------------------------------------------------------------------ */
+/* 8. app                                                              */
+/* ------------------------------------------------------------------ */
+const stage = $('stage'), canvas = $('view');
+let OUT = null;
+try { OUT = initGL(canvas); } catch (e) { console.warn(e); OUT = null; }
+if (!OUT) OUT = init2D(canvas);
+const live = makeRenderCtx();
+const LAY = { devW: 0, devH: 0, cw: 8, ch: 16, cols: 0, rows: 0, offX: 0, offY: 0, aspect: 0.5, dpr: 1 };
+let SRC = null, PREP = null, MODEL = null;
+let dirty = true, atlasKey = '';
+
+function layout() {
+  const r = stage.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+  LAY.dpr = dpr;
+  LAY.devW = Math.max(1, Math.round(r.width * dpr));
+  LAY.devH = Math.max(1, Math.round(r.height * dpr));
+  canvas.width = LAY.devW; canvas.height = LAY.devH;
+  const fontPx = S.font * dpr;
+  const m = measureCell(fontPx);
+  LAY.cw = m.cw; LAY.ch = m.ch; LAY.fontPx = fontPx;
+  LAY.cols = Math.max(4, Math.floor(LAY.devW / LAY.cw));
+  LAY.rows = Math.max(4, Math.floor(LAY.devH / LAY.ch));
+  LAY.offX = Math.floor((LAY.devW - LAY.cols * LAY.cw) / 2);
+  LAY.offY = Math.floor((LAY.devH - LAY.rows * LAY.ch) / 2);
+  LAY.aspect = LAY.cw / LAY.ch;
+  refreshAtlas(true);
+  dirty = true;
+}
+
+function refreshAtlas(force) {
+  const key = `${S.ramp}|${LAY.cw}|${LAY.ch}|${LAY.fontPx}`;
+  if (!force && key === atlasKey) return;
+  atlasKey = key;
+  OUT.setAtlas(buildAtlas(RAMPS[S.ramp], LAY.cw, LAY.ch, LAY.fontPx));
+  dirty = true;
+}
+
+const opts = () => ({ ramp: Array.from(RAMPS[S.ramp]), theme: S.theme, mode: S.mode, edges: S.edges, glow: S.glow });
+
+let fpsT = performance.now(), fpsN = 0, fps = 0;
+function draw() {
+  if (!MODEL) return;
+  renderCells(MODEL, live, LAY.cols, LAY.rows, LAY.aspect, { yaw: V.yaw, pitch: V.pitch, zoom: S.zoom }, opts());
+  OUT.draw(live, LAY, opts());
+  fpsN++;
+}
+
+const drag = { on: false, id: null, x: 0, y: 0, pts: new Map(), pinch0: 0, zoom0: 1, lastMove: 0 };
+let lastT = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - lastT) / 1000);
+  lastT = now;
+  let moving = false;
+  if (!drag.on) {
+    if (S.auto) { V.yaw += S.speed * dt; moving = true; }
+    if (Math.abs(V.vyaw) > 1e-4 || Math.abs(V.vpitch) > 1e-4) {
+      V.yaw += V.vyaw; V.pitch = clamp(V.pitch + V.vpitch, -1.35, 1.35);
+      V.vyaw *= 0.93; V.vpitch *= 0.93; moving = true;
+    }
+  }
+  if (dirty || moving) { draw(); dirty = false; }
+  if (now - fpsT > 600) {
+    fps = Math.round(fpsN * 1000 / (now - fpsT)); fpsN = 0; fpsT = now;
+    $('stats').textContent = `${LAY.cols}×${LAY.rows} 글자 · ${fps}fps`;
+    $('stats2').textContent = MODEL ? `${(MODEL.n / 1000).toFixed(0)}k 점 · ${OUT.kind === 'webgl' ? 'WebGL' : 'Canvas'}` : '';
+  }
+  requestAnimationFrame(loop);
+}
+
+/* image pipeline */
+async function setImage(src, name, isDefault) {
+  $('busy').classList.add('on');
+  await new Promise((r) => setTimeout(r, 20));
+  try {
+    const img = await loadImg(src);
+    SRC = { rgba: imageToRGBA(img), name, isDefault, src };
+    rebuildAll();
+    $('srcname').textContent = isDefault ? '기본 이미지 · 토끼' : name;
+    V.yaw = VIEW0.yaw; V.pitch = VIEW0.pitch; V.vyaw = V.vpitch = 0;
+  } catch (e) {
+    toast(e.message || '이미지를 열지 못했어요. PNG나 JPG로 다시 시도해 주세요.');
+  } finally {
+    $('busy').classList.remove('on');
+  }
+}
+
+function rebuildAll() {
+  const { mask, hadAlpha } = computeMask(SRC.rgba, S.tol);
+  SRC.hadAlpha = hadAlpha;
+  const { tex, back } = prepTexture(SRC.rgba, mask);
+  const G = toGrid(SRC.rgba, mask, tex, 240);
+  G.back = back;
+  G.u = poisson(G.gm, G.gw, G.gh);
+  PREP = G;
+  MODEL = buildPoints(PREP, S.volume);
+  $('tol').disabled = hadAlpha;
+  $('tol-note').textContent = hadAlpha
+    ? '투명 배경 이미지라 지금은 쓰지 않아요. 배경이 있는 사진이면 가장자리 색을 기준으로 지워요.'
+    : '가장자리와 비슷한 색을 배경으로 보고 지워요. 피사체가 깎이면 낮추고, 배경이 남으면 올리세요.';
+  dirty = true;
+}
+
+/* ui wiring */
+const SYNC = [];
+function syncUI() { SYNC.forEach((f) => f()); }
+function bindRange(id, key, fmt, onChange) {
+  const el = $(id), out = $(id + '-out');
+  const show = () => { out.textContent = fmt(S[key]); };
+  el.value = key === 'zoom' ? Math.round(S.zoom * 100) : S[key];
+  show();
+  el.addEventListener('input', () => {
+    S[key] = key === 'zoom' ? Number(el.value) / 100 : Number(el.value);
+    show();
+    onChange && onChange();
+    dirty = true;
+  });
+  const api = { sync() { el.value = key === 'zoom' ? Math.round(S.zoom * 100) : S[key]; show(); } };
+  SYNC.push(api.sync);
+  return api;
+}
+let volTimer = 0;
+bindRange('volume', 'volume', (v) => v.toFixed(2), () => {
+  clearTimeout(volTimer);
+  volTimer = setTimeout(() => { if (PREP) { MODEL = buildPoints(PREP, S.volume); dirty = true; } }, 30);
+});
+bindRange('font', 'font', (v) => `${v}px`, () => layout());
+const zoomUI = bindRange('zoom', 'zoom', (v) => `${Math.round(v * 100)}%`);
+bindRange('light', 'light', (v) => `${v > 0 ? '+' : ''}${v}°`);
+bindRange('speed', 'speed', (v) => v.toFixed(2));
+let tolTimer = 0;
+bindRange('tol', 'tol', (v) => String(v), () => { clearTimeout(tolTimer); tolTimer = setTimeout(() => { if (SRC && !SRC.hadAlpha) rebuildAll(); }, 120); });
+
+function bindChips(id, key, onChange) {
+  const box = $(id);
+  const set = (v) => { box.querySelectorAll('[role="radio"]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === v))); };
+  set(S[key]);
+  SYNC.push(() => set(S[key]));
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('[role="radio"]');
+    if (!b) return;
+    S[key] = b.dataset.v; set(S[key]); onChange && onChange(); dirty = true;
+  });
+  box.addEventListener('keydown', (e) => {
+    if (!['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+    const items = [...box.querySelectorAll('[role="radio"]')];
+    let i = items.findIndex((b) => b.dataset.v === S[key]);
+    i = (i + (e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    S[key] = items[i].dataset.v; set(S[key]); items[i].focus(); onChange && onChange(); dirty = true;
+    e.preventDefault();
+  });
+}
+bindChips('ramp', 'ramp', () => refreshAtlas());
+bindChips('mode', 'mode');
+bindChips('theme', 'theme', () => { document.documentElement.dataset.render = S.theme; });
+
+function bindSwitch(id, key) {
+  const el = $(id);
+  el.setAttribute('aria-checked', String(S[key]));
+  SYNC.push(() => el.setAttribute('aria-checked', String(S[key])));
+  el.addEventListener('click', () => { S[key] = !S[key]; el.setAttribute('aria-checked', String(S[key])); dirty = true; });
+  return el;
+}
+bindSwitch('auto', 'auto');
+bindSwitch('edges', 'edges');
+bindSwitch('glow', 'glow');
+
+/* pointer + keys */
+stage.addEventListener('pointerdown', (e) => {
+  stage.setPointerCapture(e.pointerId);
+  drag.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (drag.pts.size === 2) {
+    const [a, b] = [...drag.pts.values()];
+    drag.pinch0 = Math.hypot(a.x - b.x, a.y - b.y); drag.zoom0 = S.zoom;
+  }
+  drag.on = true; drag.x = e.clientX; drag.y = e.clientY;
+  V.vyaw = V.vpitch = 0;
+});
+stage.addEventListener('pointermove', (e) => {
+  if (!drag.pts.has(e.pointerId)) return;
+  drag.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (drag.pts.size >= 2) {
+    const [a, b] = [...drag.pts.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (drag.pinch0 > 0) { S.zoom = clamp(drag.zoom0 * d / drag.pinch0, 0.35, 3); zoomUI.sync(); dirty = true; }
+    return;
+  }
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  drag.x = e.clientX; drag.y = e.clientY;
+  V.yaw += dx * 0.009; V.pitch = clamp(V.pitch + dy * 0.009, -1.35, 1.35);
+  V.vyaw = dx * 0.009; V.vpitch = dy * 0.009;
+  dirty = true;
+});
+const endDrag = (e) => {
+  drag.pts.delete(e.pointerId);
+  if (drag.pts.size === 0) drag.on = false;
+  if (drag.pts.size < 2) drag.pinch0 = 0;
+};
+stage.addEventListener('pointerup', endDrag);
+stage.addEventListener('pointercancel', endDrag);
+stage.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  S.zoom = clamp(S.zoom * Math.exp(-e.deltaY * 0.0012), 0.35, 3);
+  zoomUI.sync(); dirty = true;
+}, { passive: false });
+stage.addEventListener('dblclick', () => { V.yaw = VIEW0.yaw; V.pitch = VIEW0.pitch; V.vyaw = V.vpitch = 0; S.zoom = 1; zoomUI.sync(); dirty = true; });
+stage.addEventListener('keydown', (e) => {
+  const k = e.key;
+  if (k === 'ArrowLeft') V.yaw -= 0.12; else if (k === 'ArrowRight') V.yaw += 0.12;
+  else if (k === 'ArrowUp') V.pitch = clamp(V.pitch - 0.1, -1.35, 1.35); else if (k === 'ArrowDown') V.pitch = clamp(V.pitch + 0.1, -1.35, 1.35);
+  else if (k === '+' || k === '=') S.zoom = clamp(S.zoom * 1.1, 0.35, 3); else if (k === '-') S.zoom = clamp(S.zoom / 1.1, 0.35, 3);
+  else if (k === ' ') { S.auto = !S.auto; $('auto').setAttribute('aria-checked', String(S.auto)); }
+  else if (k === '0') { V.yaw = VIEW0.yaw; V.pitch = VIEW0.pitch; S.zoom = 1; }
+  else return;
+  zoomUI.sync(); dirty = true; e.preventDefault();
+});
+
+/* files */
+$('pick').addEventListener('click', () => $('file').click());
+$('file').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; if (f) openFile(f); e.target.value = ''; });
+$('reset-img').addEventListener('click', () => setImage(BUNNY_SRC, '토끼', true));
+function openFile(f) {
+  if (!f.type.startsWith('image/')) { toast('이미지 파일(PNG, JPG, WebP, GIF)을 넣어 주세요.'); return; }
+  const rd = new FileReader();
+  rd.onload = () => setImage(rd.result, f.name, false);
+  rd.onerror = () => toast('파일을 읽지 못했어요. 다시 시도해 주세요.');
+  rd.readAsDataURL(f);
+}
+let dragDepth = 0;
+window.addEventListener('dragenter', (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files')) { dragDepth++; $('drop').classList.add('on'); e.preventDefault(); } });
+window.addEventListener('dragover', (e) => { e.preventDefault(); });
+window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('drop').classList.remove('on'); });
+window.addEventListener('drop', (e) => {
+  e.preventDefault(); dragDepth = 0; $('drop').classList.remove('on');
+  const f = e.dataTransfer?.files && e.dataTransfer.files[0];
+  if (f) openFile(f);
+});
+
+/* toast + modal */
+let toastT = 0;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2600); }
+let modalSave = null;
+function openModal(title, bodyEl, note, onSave) {
+  $('modal-title').textContent = title;
+  const body = $('modal-body'); body.innerHTML = ''; body.appendChild(bodyEl);
+  $('modal-note').textContent = note || '';
+  modalSave = onSave;
+  $('modal-save').style.display = onSave ? '' : 'none';
+  $('modal').classList.add('on');
+  ($('modal-save').style.display === 'none' ? $('modal-close') : $('modal-save')).focus();
+}
+function closeModal() { $('modal').classList.remove('on'); modalSave = null; stage.focus(); }
+$('modal-close').addEventListener('click', closeModal);
+$('modal').addEventListener('click', (e) => { if (e.target === $('modal')) closeModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('modal').classList.contains('on')) closeModal(); });
+$('modal-save').addEventListener('click', async () => { if (modalSave) await modalSave(); });
+
+/* downloads capability */
+let DL = null;
+(async () => {
+  try { if (window.claude && window.claude.use) DL = await window.claude.use('downloads'); } catch (e) { DL = null; }
+})();
+async function offerFile(blob, filename) {
+  if (DL) {
+    try {
+      await DL.save({ filename, data: blob });
+      toast(`${filename} 저장을 요청했어요.`);
+      return true;
+    } catch (err) {
+      const code = err && err.code;
+      if (code === 'declined') { toast('저장을 취소했어요.'); return false; }
+      if (code === 'rate_limited') { toast('다른 저장 창이 열려 있어요. 잠시 뒤 다시 눌러 주세요.'); return false; }
+    }
+  }
+  // regular web page (e.g. GitHub Pages): plain download link
+  try {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    toast(`${filename} 다운로드를 시작했어요. 안 되면 미리보기를 길게 누르거나 우클릭해서 저장하세요.`);
+    return true;
+  } catch (e) {
+    toast('이 화면에서는 바로 저장할 수 없어요. 미리보기를 길게 누르거나 우클릭해서 저장하세요.');
+    return false;
+  }
+}
+function previewAndSave(blob, filename, title) {
+  const url = URL.createObjectURL(blob);
+  const img = new Image(); img.src = url; img.alt = title;
+  const kb = Math.round(blob.size / 1024);
+  const size = kb >= 1024 ? (kb / 1024).toFixed(1) + 'MB' : kb + 'KB';
+  openModal(title, img, `${filename} · ${size}`, () => offerFile(blob, filename));
+}
+
+/* text */
+function frameText(rc, ramp) {
+  const g = Array.from(ramp), lines = [];
+  for (let y = 0; y < rc.rows; y++) {
+    let s = '';
+    for (let x = 0; x < rc.cols; x++) s += g[rc.glyph[y * rc.cols + x]];
+    lines.push(s.replace(/\s+$/, ''));
+  }
+  while (lines.length && !lines[0]) lines.shift();
+  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  let lead = Infinity;
+  for (const l of lines) if (l.trim()) lead = Math.min(lead, l.length - l.trimStart().length);
+  return lines.map((l) => l.slice(Number.isFinite(lead) ? lead : 0)).join('\n');
+}
+$('copy').addEventListener('click', async () => {
+  const text = frameText(live, RAMPS[S.ramp]);
+  try { await navigator.clipboard.writeText(text); toast(`지금 화면을 텍스트로 복사했어요 (${live.cols}×${live.rows}).`); }
+  catch (e) {
+    const ta = document.createElement('textarea'); ta.value = text; ta.readOnly = true; ta.setAttribute('aria-label', '아스키 텍스트');
+    openModal('텍스트로 복사하기', ta, '자동 복사가 막혀 있어요. 전체 선택(⌘/Ctrl+A) 뒤 복사하세요.', null);
+    setTimeout(() => { ta.focus(); ta.select(); }, 30);
+  }
+});
+$('png').addEventListener('click', () => {
+  draw();
+  canvas.toBlob((blob) => { if (blob) previewAndSave(blob, 'ascii-3d.png', 'PNG 미리보기'); else toast('PNG를 만들지 못했어요.'); }, 'image/png');
+});
+
+/* ------------------------------------------------------------------ */
+/* 9. GIF: median-cut palette + LZW                                    */
+/* ------------------------------------------------------------------ */
+function medianCut(hist, maxColors) {
+  const keys = [];
+  for (let k = 0; k < 32768; k++) if (hist[k]) keys.push(k);
+  const comp = (k, c) => (c === 0 ? (k >> 10) & 31 : c === 1 ? (k >> 5) & 31 : k & 31);
+  let boxes = [keys];
+  while (boxes.length < maxColors) {
+    let best = -1, bestScore = -1, bestCh = 0;
+    boxes.forEach((bx, bi) => {
+      if (bx.length < 2) return;
+      let cntSum = 0;
+      const lo = [31, 31, 31], hi = [0, 0, 0];
+      for (const k of bx) { cntSum += hist[k]; for (let c = 0; c < 3; c++) { const v = comp(k, c); if (v < lo[c]) lo[c] = v; if (v > hi[c]) hi[c] = v; } }
+      let ch = 0, rng = -1;
+      for (let c = 0; c < 3; c++) if (hi[c] - lo[c] > rng) { rng = hi[c] - lo[c]; ch = c; }
+      const score = rng * Math.sqrt(cntSum);
+      if (rng > 0 && score > bestScore) { bestScore = score; best = bi; bestCh = ch; }
+    });
+    if (best < 0) break;
+    const bx = boxes[best].slice().sort((a, b) => comp(a, bestCh) - comp(b, bestCh));
+    let total = 0; for (const k of bx) total += hist[k];
+    let acc = 0, cut = 1;
+    for (let i = 0; i < bx.length - 1; i++) { acc += hist[bx[i]]; if (acc >= total / 2) { cut = i + 1; break; } cut = i + 1; }
+    boxes.splice(best, 1, bx.slice(0, cut), bx.slice(cut));
+  }
+  const pal = [];
+  for (const bx of boxes) {
+    let r = 0, g = 0, b = 0, t = 0;
+    for (const k of bx) { const w = hist[k]; r += (((k >> 10) & 31) * 8 + 4) * w; g += (((k >> 5) & 31) * 8 + 4) * w; b += ((k & 31) * 8 + 4) * w; t += w; }
+    pal.push([Math.round(r / t), Math.round(g / t), Math.round(b / t)]);
+  }
+  return pal;
+}
+
+const LZW_DICT = new Int32Array(4096 * 256), LZW_STAMP = new Int32Array(4096 * 256);
+let lzwGen = 0;
+function makeBytes() {
+  const o = { a: new Uint8Array(1 << 20), n: 0 };
+  o.push = (v) => { if (o.n >= o.a.length) { const b = new Uint8Array(o.a.length * 2); b.set(o.a); o.a = b; } o.a[o.n++] = v; };
+  return o;
+}
+function lzwEncode(out, idx, minSize) {
+  out.push(minSize);
+  const clear = 1 << minSize, eoi = clear + 1;
+  let next = eoi + 1, size = minSize + 1, cur = 0, shift = 0;
+  const block = new Uint8Array(255);
+  let bn = 0;
+  const byte = (v) => { block[bn++] = v; if (bn === 255) { out.push(255); for (let i = 0; i < 255; i++) out.push(block[i]); bn = 0; } };
+  const emit = (c) => { cur |= c << shift; shift += size; while (shift >= 8) { byte(cur & 255); cur >>>= 8; shift -= 8; } };
+  lzwGen++;
+  emit(clear);
+  let prefix = idx[0];
+  for (let i = 1; i < idx.length; i++) {
+    const k = idx[i], key = (prefix << 8) | k;
+    if (LZW_STAMP[key] === lzwGen) { prefix = LZW_DICT[key]; continue; }
+    emit(prefix);
+    if (next === 4096) { emit(clear); next = eoi + 1; size = minSize + 1; lzwGen++; }
+    else { if (next >= (1 << size)) size++; LZW_DICT[key] = next++; LZW_STAMP[key] = lzwGen; }
+    prefix = k;
+  }
+  emit(prefix); emit(eoi);
+  if (shift > 0) byte(cur & 255);
+  if (bn > 0) { out.push(bn); for (let i = 0; i < bn; i++) out.push(block[i]); }
+  out.push(0);
+}
+
+function composeRGB(rc, atlasA, cw, ch, bg, out) {
+  const W = rc.cols * cw, n = W * rc.rows * ch;
+  for (let i = 0; i < n; i++) { out[i * 3] = bg[0]; out[i * 3 + 1] = bg[1]; out[i * 3 + 2] = bg[2]; }
+  for (let y = 0; y < rc.rows; y++) for (let x = 0; x < rc.cols; x++) {
+    const c = y * rc.cols + x, g = rc.glyph[c];
+    if (!g) continue;
+    const r = rc.rgb[c * 3], gg = rc.rgb[c * 3 + 1], b = rc.rgb[c * 3 + 2];
+    const A = atlasA[g];
+    for (let py = 0; py < ch; py++) {
+      let o = ((y * ch + py) * W + x * cw) * 3;
+      for (let px = 0; px < cw; px++, o += 3) {
+        const a = A[py * cw + px];
+        if (!a) continue;
+        out[o] += (r - out[o]) * a; out[o + 1] += (gg - out[o + 1]) * a; out[o + 2] += (b - out[o + 2]) * a;
+      }
+    }
+  }
+}
+
+let gifBusy = false;
+async function makeGif() {
+  if (gifBusy || !MODEL) return;
+  gifBusy = true;
+  const btn = $('gif');
+  btn.disabled = true;
+  try {
+    const FR = 60, DELAY = 5;
+    const fontPx = 10;
+    const m = measureCell(fontPx);
+    const cw = m.cw, ch = m.ch;
+    const cols = Math.round(640 / cw), rows = Math.round(600 / ch);
+    const atlas = buildAtlas(RAMPS[S.ramp], cw, ch, fontPx);
+    const img = atlas.ctx.getImageData(0, 0, atlas.canvas.width, ch).data;
+    const atlasA = [];
+    for (let g = 0; g < atlas.n; g++) {
+      const a = new Float32Array(cw * ch);
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) a[y * cw + x] = img[(y * atlas.canvas.width + g * cw + x) * 4 + 3] / 255;
+      atlasA.push(a);
+    }
+    const rc = makeRenderCtx();
+    const o = opts();
+    const bg = THEMES[S.theme].bg;
+    const W = cols * cw, H = rows * ch;
+    const rgb = new Float32Array(W * H * 3);
+    const yaw0 = V.yaw, pitch = V.pitch;
+    // palette from a handful of frames
+    const hist = new Uint32Array(32768);
+    for (let s = 0; s < 6; s++) {
+      renderCells(MODEL, rc, cols, rows, cw / ch, { yaw: yaw0 + (s / 6) * Math.PI * 2, pitch, zoom: S.zoom }, o);
+      composeRGB(rc, atlasA, cw, ch, bg, rgb);
+      for (let i = 0; i < W * H; i++) hist[((rgb[i * 3] >> 3) << 10) | ((rgb[i * 3 + 1] >> 3) << 5) | (rgb[i * 3 + 2] >> 3)]++;
+    }
+    const pal = medianCut(hist, 256);
+    while (pal.length < 256) pal.push([0, 0, 0]);
+    const lut = new Int16Array(32768).fill(-1);
+    const nearest = (key) => {
+      const r = ((key >> 10) & 31) * 8 + 4, g = ((key >> 5) & 31) * 8 + 4, b = (key & 31) * 8 + 4;
+      let bi = 0, bd = 1e9;
+      for (let i = 0; i < 256; i++) { const p = pal[i], d = (p[0] - r) ** 2 + (p[1] - g) ** 2 + (p[2] - b) ** 2; if (d < bd) { bd = d; bi = i; } }
+      return bi;
+    };
+    const out = makeBytes();
+    const str = (s) => { for (let i = 0; i < s.length; i++) out.push(s.charCodeAt(i)); };
+    const u16 = (v) => { out.push(v & 255); out.push((v >> 8) & 255); };
+    str('GIF89a'); u16(W); u16(H); out.push(0xf7); out.push(0); out.push(0);
+    for (const p of pal) { out.push(p[0]); out.push(p[1]); out.push(p[2]); }
+    out.push(0x21); out.push(0xff); out.push(11); str('NETSCAPE2.0'); out.push(3); out.push(1); u16(0); out.push(0);
+    const idx = new Uint8Array(W * H);
+    for (let f = 0; f < FR; f++) {
+      renderCells(MODEL, rc, cols, rows, cw / ch, { yaw: yaw0 + (f / FR) * Math.PI * 2, pitch, zoom: S.zoom }, o);
+      composeRGB(rc, atlasA, cw, ch, bg, rgb);
+      for (let i = 0; i < W * H; i++) {
+        const key = ((rgb[i * 3] >> 3) << 10) | ((rgb[i * 3 + 1] >> 3) << 5) | (rgb[i * 3 + 2] >> 3);
+        let v = lut[key];
+        if (v < 0) v = lut[key] = nearest(key);
+        idx[i] = v;
+      }
+      out.push(0x21); out.push(0xf9); out.push(4); out.push(0x04); u16(DELAY); out.push(0); out.push(0);
+      out.push(0x2c); u16(0); u16(0); u16(W); u16(H); out.push(0);
+      lzwEncode(out, idx, 8);
+      btn.textContent = `GIF 만드는 중 ${Math.round(((f + 1) / FR) * 100)}%`;
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    out.push(0x3b);
+    const blob = new Blob([out.a.slice(0, out.n)], { type: 'image/gif' });
+    window.__lastGif = blob;
+    previewAndSave(blob, 'ascii-3d.gif', '360° GIF 미리보기');
+  } catch (e) {
+    console.error(e);
+    toast('GIF를 만들지 못했어요. 글자 크기를 키우거나 다시 시도해 주세요.');
+  } finally {
+    gifBusy = false; btn.disabled = false; btn.textContent = '360° GIF 만들기';
+  }
+}
+$('gif').addEventListener('click', makeGif);
+
+/* ------------------------------------------------------------------ */
+/* boot                                                                */
+/* ------------------------------------------------------------------ */
+function start(saved) {
+  if (saved && saved.S) Object.assign(S, saved.S);
+  if (saved && saved.V) Object.assign(V, saved.V);
+  document.documentElement.dataset.render = S.theme;
+  syncUI();
+  new ResizeObserver(() => layout()).observe(stage);
+  layout();
+  setImage(BUNNY_SRC, '토끼', true);
+  if (document.fonts && document.fonts.load) {
+    document.fonts.load(`600 20px "Martian Mono"`).then(() => { atlasKey = ''; layout(); }).catch(() => {});
+  }
+  requestAnimationFrame(loop);
+  stage.focus({ preventScroll: true });
+}
+try { window.claude && window.claude.hot && window.claude.hot.snapshot && window.claude.hot.snapshot(() => ({ S: { ...S }, V: { yaw: V.yaw, pitch: V.pitch } })); } catch (e) {}
+if (window.claude && window.claude.hot && window.claude.hot.ready) window.claude.hot.ready(start);
+else start((window.claude && window.claude.hot && window.claude.hot.data) || {});
+</script>
+</body>
+</html>
