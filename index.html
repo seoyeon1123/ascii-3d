@@ -85,6 +85,17 @@ body {
 .dock-sep { width: 1px; height: 22px; background: var(--line); margin: 0 3px; }
 .dock-hint { color: var(--muted); font-size: var(--s-1); text-align: center; }
 .dock-btn.pulse { animation: pulse 1s ease-out 3; }
+.rig-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: none; overflow: visible; }
+.rig-svg.on { display: block; }
+.rig-svg line { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+.rig-svg line.ghost { stroke-dasharray: 6 6; opacity: 0.75; }
+.rig-svg circle { fill: var(--accent); }
+.edit-banner {
+  position: absolute; top: 18px; left: 50%; transform: translateX(-50%); display: none; white-space: nowrap;
+  background: var(--accent); color: #1b1220; padding: 8px 14px; border-radius: 10px; font-size: var(--s-2); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.edit-banner.on { display: block; }
+.stage.editing { cursor: crosshair; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 75%, transparent); } 100% { box-shadow: 0 0 0 12px transparent; } }
 
 .rail {
@@ -154,6 +165,7 @@ input[type="range"]:disabled { opacity: 0.4; }
   .hud.tl .hint, .dock-hint { display: none; }
   .dock-wrap { bottom: 12px; }
   .toast { bottom: 72px; white-space: normal; width: max-content; }
+  .edit-banner { top: 64px; white-space: normal; width: calc(100% - 32px); text-align: center; }
   .dock-btn { padding: 9px 11px; min-width: 64px; } .dock-btn.primary { padding: 9px 14px; }
   .mark b { font-size: 22px; } .mark span { font-size: 16px; }
   .hint .keys { display: none; }
@@ -192,6 +204,8 @@ input[type="range"]:disabled { opacity: 0.4; }
     <div class="dock-hint">끌어다 놓거나 ⌘V로 붙여넣어도 바로 3D로 만들어요</div>
   </div>
   <div class="drop" id="drop"><div>여기에 놓으면 바로 3D로 만들어요<br><span class="note">투명 배경 PNG가 가장 깔끔해요</span></div></div>
+  <svg class="rig-svg" id="rig-svg" aria-hidden="true"><line id="rig-line" x1="-99" y1="-99" x2="-99" y2="-99"></line><circle id="rig-root" r="6" cx="-99" cy="-99"></circle><circle id="rig-tip" r="4" cx="-99" cy="-99"></circle></svg>
+  <div class="edit-banner" id="edit-banner" role="status">움직일 부위의 <b>뿌리에서 끝까지</b> 드래그하세요 · Esc로 취소</div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
   <div class="busy" id="busy" role="status" aria-live="polite">
     <div class="busy-card">
@@ -203,6 +217,27 @@ input[type="range"]:disabled { opacity: 0.4; }
 </main>
 
 <aside class="rail" aria-label="설정">
+  <section class="group" aria-labelledby="g0">
+    <h2 id="g0">MOVE<span>움직이기</span></h2>
+    <div class="field">
+      <span class="label" id="lbl-motion">움직임</span>
+      <div class="chips" role="radiogroup" aria-labelledby="lbl-motion" id="motion">
+        <button class="chip" role="radio" aria-checked="true" data-v="nod">까딱까딱</button>
+        <button class="chip" role="radio" aria-checked="false" data-v="wag">좌우 흔들기</button>
+        <button class="chip" role="radio" aria-checked="false" data-v="off">멈춤</button>
+      </div>
+    </div>
+    <div class="row">
+      <button class="btn" id="rig-edit">움직일 부위 지정</button>
+      <button class="btn" id="rig-reset">기본 손가락으로</button>
+    </div>
+    <p class="note" id="rig-note">토끼 손가락에 뼈가 들어 있어요.</p>
+    <div class="field">
+      <label for="mspeed">움직임 속도 <output id="mspeed-out" for="mspeed">1.00×</output></label>
+      <input type="range" id="mspeed" min="0.3" max="2.5" step="0.05" value="1">
+    </div>
+  </section>
+
   <section class="group" aria-labelledby="g1">
     <h2 id="g1">SHAPE<span>모양</span></h2>
     <div class="field">
@@ -252,7 +287,7 @@ input[type="range"]:disabled { opacity: 0.4; }
   </section>
 
   <section class="group" aria-labelledby="g3">
-    <h2 id="g3">LIGHT &amp; MOTION<span>빛·움직임</span></h2>
+    <h2 id="g3">LIGHT &amp; SPIN<span>빛·회전</span></h2>
     <div class="field">
       <label for="light">조명 방향 <output id="light-out" for="light">-35°</output></label>
       <input type="range" id="light" min="-180" max="180" step="5" value="-35">
@@ -325,11 +360,11 @@ const THEMES = {
   paper: { bg: [241, 236, 225], grain: 0.035 },
 };
 
-const S = { volume: 0.75, font: (window.innerWidth || 1200) < 640 ? 7 : 10, zoom: 1, ramp: 'classic', mode: 'color', theme: 'dark', light: -35, auto: true, speed: 0.55, edges: true, glow: true, tol: 48 };
+const S = { volume: 0.75, font: (window.innerWidth || 1200) < 640 ? 7 : 10, zoom: 1, ramp: 'classic', mode: 'color', theme: 'dark', light: -35, auto: true, speed: 0.55, edges: true, glow: true, tol: 48, motion: 'nod', mspeed: 1 };
 const VIEW0 = { yaw: -0.38, pitch: 0.14 };
 const V = { yaw: VIEW0.yaw, pitch: VIEW0.pitch, vyaw: 0, vpitch: 0 };
 const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-if (reduceMotion) S.auto = false;
+if (reduceMotion) { S.auto = false; S.motion = 'off'; }
 
 const $ = (id) => document.getElementById(id);
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -620,13 +655,14 @@ function buildPoints(P, volume) {
     if (gm[i]) { const gap = Z[i] - ZMIN[i]; if (gap > step) count += 2 * (Math.ceil(gap / step) - 1); }
   }
   const PP = new Float32Array(count * 3), NN = new Float32Array(count * 3), CC = new Float32Array(count * 3), INK = new Uint8Array(count);
+  const CELL = new Int32Array(count);
   let k = 0;
-  const put = (x, y, z, nx, ny, nz, r, g, b, ink) => {
+  const put = (x, y, z, nx, ny, nz, r, g, b, ink, cell) => {
     const o = k * 3;
     PP[o] = x; PP[o + 1] = y; PP[o + 2] = z;
     NN[o] = nx; NN[o + 1] = ny; NN[o + 2] = nz;
     CC[o] = r; CC[o + 1] = g; CC[o + 2] = b;
-    INK[k] = ink; k++;
+    INK[k] = ink; CELL[k] = cell; k++;
   };
   for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
     const i = y * gw + x;
@@ -634,8 +670,8 @@ function buildPoints(P, volume) {
     const X = (X0 + (x + 0.5) * f - cx) * scale, Y = -(Y0 + (y + 0.5) * f - cy) * scale;
     const r = gt[i * 3], g = gt[i * 3 + 1], b = gt[i * 3 + 2];
     const ink = (LW[0] * r + LW[1] * g + LW[2] * b) < 0.33 ? 1 : 0;
-    put(X, Y, Z[i], NX[i], NY[i], NZ[i], r, g, b, ink);
-    put(X, Y, -Z[i], NX[i], NY[i], -NZ[i], back[0], back[1], back[2], 0);
+    put(X, Y, Z[i], NX[i], NY[i], NZ[i], r, g, b, ink, i);
+    put(X, Y, -Z[i], NX[i], NY[i], -NZ[i], back[0], back[1], back[2], 0, i);
     if (!gm[i]) continue;
     const gap = Z[i] - ZMIN[i];
     if (gap <= step) continue;
@@ -644,8 +680,8 @@ function buildPoints(P, volume) {
       const zz = ZMIN[i] + gap * (j / kk);
       const fz = NZ[i] * clamp(zz / Math.max(Z[i], 1e-9), 0, 1);
       const len = Math.hypot(NX[i], NY[i], fz) || 1;
-      put(X, Y, zz, NX[i] / len, NY[i] / len, fz / len, r, g, b, ink);
-      put(X, Y, -zz, NX[i] / len, NY[i] / len, -fz / len, back[0], back[1], back[2], 0);
+      put(X, Y, zz, NX[i] / len, NY[i] / len, fz / len, r, g, b, ink, i);
+      put(X, Y, -zz, NX[i] / len, NY[i] / len, -fz / len, back[0], back[1], back[2], 0, i);
     }
   }
   // spin around the mass centre (x) and the vertical middle (y)
@@ -661,7 +697,7 @@ function buildPoints(P, volume) {
     PP[i * 3] -= mx; PP[i * 3 + 1] -= my;
     rmax = Math.max(rmax, Math.hypot(PP[i * 3], PP[i * 3 + 1], PP[i * 3 + 2]));
   }
-  const M = { n: count, P: PP, N: NN, C: CC, INK, dx, rmax };
+  const M = { n: count, P: PP, N: NN, C: CC, INK, CELL, dx, rmax, xf: { cx, cy, scale, mx, my } };
   M.fit = fitExtent(M);
   return M;
 }
@@ -685,6 +721,103 @@ function fitExtent(M) {
     }
   }
   return { xmax, ymin, ymax };
+}
+
+/* ------------------------------------------------------------------ */
+/* 4b. bones: pick a part (root -> tip) and swing it in 3D             */
+/* ------------------------------------------------------------------ */
+const RIG_PRESET = { b: [0.22, 0.338], t: [0.22, 0.15] }; // the bunny's finger, as fractions of the image
+const MOTION = { nod: { A: (75 * Math.PI) / 180, period: 1.35 }, wag: { A: (26 * Math.PI) / 180, period: 1.1 } };
+const smooth = (e0, e1, x) => { const t = clamp((x - e0) / (e1 - e0), 0, 1); return t * t * (3 - 2 * t); };
+function imgToModel(M, px, py) { const x = M.xf; return [(px - x.cx) * x.scale - x.mx, -(py - x.cy) * x.scale - x.my]; }
+function modelToImg(M, X, Y) { const x = M.xf; return [(X + x.mx) / x.scale + x.cx, x.cy - (Y + x.my) / x.scale]; }
+
+function buildRig(M, P, def) {
+  if (!M || !P || !def) return null;
+  const B = imgToModel(M, def.b[0], def.b[1]), T = imgToModel(M, def.t[0], def.t[1]);
+  const L = Math.hypot(T[0] - B[0], T[1] - B[1]);
+  if (L < M.dx * 3) return null;
+  const dir = [(T[0] - B[0]) / L, (T[1] - B[1]) / L];
+  const { gw, gh, gm, f, X0, Y0 } = P;
+  if (!P.D) P.D = chamfer(gm, gw, gh);
+  const cellOf = (px, py) => {
+    const gx = Math.floor((px - X0) / f), gy = Math.floor((py - Y0) / f);
+    return gx >= 0 && gy >= 0 && gx < gw && gy < gh ? gy * gw + gx : -1;
+  };
+  const along = (t) => cellOf(def.b[0] + (def.t[0] - def.b[0]) * t, def.b[1] + (def.t[1] - def.b[1]) * t);
+  // part thickness from the distance to the outline along the bone
+  let dmax = 0;
+  for (let k = 2; k <= 8; k++) { const c = along(k / 10); if (c >= 0 && gm[c]) dmax = Math.max(dmax, P.D[c]); }
+  const R = (Math.max(dmax, 2) * 1.35 + 2) * M.dx;
+  const n = gw * gh, cand = new Uint8Array(n), sv = new Float32Array(n);
+  for (let gy = 0; gy < gh; gy++) for (let gx = 0; gx < gw; gx++) {
+    const i = gy * gw + gx;
+    const inRegion = gm[i] || (gx > 0 && gm[i - 1]) || (gx < gw - 1 && gm[i + 1]) || (gy > 0 && gm[i - gw]) || (gy < gh - 1 && gm[i + gw]);
+    if (!inRegion) continue;
+    const m = imgToModel(M, X0 + (gx + 0.5) * f, Y0 + (gy + 0.5) * f);
+    const rx = m[0] - B[0], ry = m[1] - B[1];
+    const sAlong = (rx * dir[0] + ry * dir[1]) / L, perp = Math.abs(rx * dir[1] - ry * dir[0]);
+    if (sAlong >= -0.3 && sAlong <= 1.8 && perp <= R) { cand[i] = 1; sv[i] = sAlong; }
+  }
+  // keep only the piece connected to the drawn bone
+  const sel = new Uint8Array(n), q = [];
+  for (let k = 0; k <= 40; k++) { const c = along(0.2 + (0.8 * k) / 40); if (c >= 0 && cand[c] && !sel[c]) { sel[c] = 1; q.push(c); } }
+  if (!q.length) return null;
+  for (let h = 0; h < q.length; h++) {
+    const i = q[h], gx = i % gw, gy = (i / gw) | 0;
+    const nb = [gx > 0 ? i - 1 : -1, gx < gw - 1 ? i + 1 : -1, gy > 0 ? i - gw : -1, gy < gh - 1 ? i + gw : -1];
+    for (const j of nb) if (j >= 0 && cand[j] && !sel[j]) { sel[j] = 1; q.push(j); }
+  }
+  const idx = [], wts = [], mask = new Uint8Array(M.n);
+  for (let pnt = 0; pnt < M.n; pnt++) {
+    const c = M.CELL[pnt];
+    if (!sel[c]) continue;
+    const w = smooth(-0.12, 0.12, sv[c]); // soft knuckle at the root
+    if (w <= 0.002) continue;
+    idx.push(pnt); wts.push(w);
+    if (w > 0.35) mask[pnt] = 1;
+  }
+  if (!idx.length) return null;
+  const I = Int32Array.from(idx), Wt = Float32Array.from(wts);
+  const P0 = new Float32Array(I.length * 3), N0 = new Float32Array(I.length * 3);
+  for (let k = 0; k < I.length; k++) for (let a = 0; a < 3; a++) { P0[k * 3 + a] = M.P[I[k] * 3 + a]; N0[k * 3 + a] = M.N[I[k] * 3 + a]; }
+  return { B, T, dir, L, idx: I, w: Wt, P0, N0, mask };
+}
+
+// rotate the part around its root: 'nod' folds it toward the viewer, 'wag' swings it side to side
+function applyRig(M, rig, theta, mode) {
+  const { idx, w, P0, N0, B, dir } = rig, P = M.P, N = M.N;
+  let ax = 0, ay = 0, az = 1;
+  if (mode === 'nod') { ax = dir[1]; ay = -dir[0]; az = 0; }
+  for (let k = 0; k < idx.length; k++) {
+    const a = theta * w[k], o = idx[k] * 3, q = k * 3;
+    const c = Math.cos(a), sn = Math.sin(a), t = 1 - c;
+    const r00 = c + ax * ax * t, r01 = ax * ay * t - az * sn, r02 = ax * az * t + ay * sn;
+    const r10 = ay * ax * t + az * sn, r11 = c + ay * ay * t, r12 = ay * az * t - ax * sn;
+    const r20 = az * ax * t - ay * sn, r21 = az * ay * t + ax * sn, r22 = c + az * az * t;
+    const px = P0[q] - B[0], py = P0[q + 1] - B[1], pz = P0[q + 2];
+    P[o] = B[0] + r00 * px + r01 * py + r02 * pz;
+    P[o + 1] = B[1] + r10 * px + r11 * py + r12 * pz;
+    P[o + 2] = r20 * px + r21 * py + r22 * pz;
+    const nx = N0[q], ny = N0[q + 1], nz = N0[q + 2];
+    N[o] = r00 * nx + r01 * ny + r02 * nz;
+    N[o + 1] = r10 * nx + r11 * ny + r12 * nz;
+    N[o + 2] = r20 * nx + r21 * ny + r22 * nz;
+  }
+}
+
+function motionTheta(mode, phase) {
+  const p = phase - Math.floor(phase);
+  if (mode === 'nod') { const sn = Math.sin(Math.PI * Math.min(1, p / 0.72)); return MOTION.nod.A * sn * sn; }
+  if (mode === 'wag') return MOTION.wag.A * Math.sin(2 * Math.PI * p);
+  return 0;
+}
+
+function fitWithRig(M, rig) {
+  const fits = [fitExtent(M)];
+  for (const [mode, th] of [['nod', MOTION.nod.A], ['wag', MOTION.wag.A], ['wag', -MOTION.wag.A]]) { applyRig(M, rig, th, mode); fits.push(fitExtent(M)); }
+  applyRig(M, rig, 0, 'nod');
+  return { xmax: Math.max(...fits.map((v) => v.xmax)), ymin: Math.min(...fits.map((v) => v.ymin)), ymax: Math.max(...fits.map((v) => v.ymax)) };
 }
 
 /* ------------------------------------------------------------------ */
@@ -723,6 +856,7 @@ function renderCells(M, rc, cols, rows, aspect, view, opts) {
   const ox = (kx - 1) / 2, oy = (ky - 1) / 2;
   const P = M.P, n = M.n;
   const hw = physW / 2, hh = physH * (padT + (1 - padT - padB) / 2);
+  rc.proj = { Sc, hw, hh, yc, aspect };
   const R0 = R[0], R1 = R[1], R2 = R[2], R3 = R[3], R4 = R[4], R5 = R[5], R6 = R[6], R7 = R[7], R8 = R[8];
   for (let i = 0; i < n; i++) {
     const o = i * 3, x = P[o], y = P[o + 1], z = P[o + 2];
@@ -753,6 +887,7 @@ function renderCells(M, rc, cols, rows, aspect, view, opts) {
   let hx = L[0], hy = L[1], hz = L[2] + 1;
   const hl = Math.hypot(hx, hy, hz); hx /= hl; hy /= hl; hz /= hl;
   const NN = M.N, CC = M.C, INK = M.INK;
+  const flash = opts.flash || 0, fmask = opts.rigMask || null;
   for (let iv = 0; iv < H; iv++) {
     const crow = (iv >> 1) * cols;
     for (let iu = 0; iu < W; iu++) {
@@ -769,7 +904,8 @@ function renderCells(M, rc, cols, rows, aspect, view, opts) {
       const rz = 1 - clamp(nZ, 0, 1), rim = rz * rz * rz;
       const shade = 0.28 + 0.42 * wrap + 0.38 * diff;
       const c = crow + (iu >> 1);
-      const r = CC[o], g = CC[o + 1], b = CC[o + 2];
+      let r = CC[o], g = CC[o + 1], b = CC[o + 2];
+      if (flash > 0 && fmask[i]) { r += (0.97 - r) * flash; g += (0.55 - g) * flash; b += (0.7 - b) * flash; }
       cr[c] += r * shade + 0.16 * spec + 0.12 * rim * r;
       cg[c] += g * shade + 0.16 * spec + 0.12 * rim * g;
       cb[c] += b * shade + 0.16 * spec + 0.12 * rim * b;
@@ -1046,6 +1182,8 @@ if (!OUT) OUT = init2D(canvas);
 const live = makeRenderCtx();
 const LAY = { devW: 0, devH: 0, cw: 8, ch: 16, cols: 0, rows: 0, offX: 0, offY: 0, aspect: 0.5, dpr: 1 };
 let SRC = null, PREP = null, MODEL = null;
+let RIGDEF = null, RIG = null, motionPhase = 0, rigFlash = 0, rigPosed = false;
+const rigEdit = { on: false, start: null, id: null, prevAuto: false };
 let dirty = true, atlasKey = '';
 
 function layout() {
@@ -1081,9 +1219,11 @@ let fpsT = performance.now(), fpsN = 0, fps = 0;
 function draw() {
   if (!MODEL) return;
   const h = LAY.devH / LAY.dpr;
+  const o = opts();
+  if (rigFlash > 0 && RIG) { o.flash = rigFlash * 0.8; o.rigMask = RIG.mask; }
   renderCells(MODEL, live, LAY.cols, LAY.rows, LAY.aspect,
-    { yaw: V.yaw, pitch: V.pitch, zoom: S.zoom, padT: clamp(60 / h, 0, 0.18), padB: clamp(96 / h, 0, 0.24) }, opts());
-  OUT.draw(live, LAY, opts());
+    { yaw: V.yaw, pitch: V.pitch, zoom: S.zoom, padT: clamp(60 / h, 0, 0.18), padB: clamp(96 / h, 0, 0.24) }, o);
+  OUT.draw(live, LAY, o);
   fpsN++;
 }
 
@@ -1100,6 +1240,14 @@ function loop(now) {
       V.vyaw *= 0.93; V.vpitch *= 0.93; moving = true;
     }
   }
+  if (MODEL && RIG && !rigEdit.on) {
+    if (S.motion !== 'off') {
+      motionPhase += (dt * S.mspeed) / MOTION[S.motion].period;
+      applyRig(MODEL, RIG, motionTheta(S.motion, motionPhase), S.motion);
+      rigPosed = true; moving = true;
+    } else if (rigPosed) { applyRig(MODEL, RIG, 0, 'nod'); rigPosed = false; moving = true; }
+  }
+  if (rigFlash > 0) { rigFlash = Math.max(0, rigFlash - dt / 1.4); moving = true; }
   if (dirty || moving) { draw(); dirty = false; }
   if (now - fpsT > 600) {
     fps = Math.round(fpsN * 1000 / (now - fpsT)); fpsN = 0; fpsT = now;
@@ -1127,6 +1275,9 @@ async function setImage(src, name, isDefault, quiet) {
     if (show) { setBusy(true, 0, 4, '이미지 읽는 중'); await nextPaint(); }
     const img = await loadImg(src);
     SRC = { rgba: imageToRGBA(img), name, isDefault, src };
+    if (rigEdit.on) exitRigEdit();
+    RIGDEF = isDefault ? presetRig() : null;
+    RIG = null; motionPhase = 0; rigPosed = false;
     await rebuildStaged(show ? (i, label) => setBusy(true, i, 4, label) : null);
     $('srcname').textContent = isDefault ? '기본 이미지 · 토끼' : name;
     V.yaw = VIEW0.yaw; V.pitch = VIEW0.pitch; V.vyaw = V.vpitch = 0;
@@ -1143,6 +1294,29 @@ async function setImage(src, name, isDefault, quiet) {
   }
 }
 
+function presetRig() {
+  const w = SRC.rgba.w, h = SRC.rgba.h;
+  return { b: [RIG_PRESET.b[0] * w, RIG_PRESET.b[1] * h], t: [RIG_PRESET.t[0] * w, RIG_PRESET.t[1] * h], preset: true };
+}
+function rebuildPoints() {
+  MODEL = buildPoints(PREP, S.volume);
+  RIG = buildRig(MODEL, PREP, RIGDEF);
+  if (RIG) MODEL.fit = fitWithRig(MODEL, RIG);
+  rigPosed = false;
+  updateRigNote();
+  dirty = true;
+}
+function updateRigNote() {
+  const isDef = !!(SRC && SRC.isDefault);
+  $('rig-reset').textContent = isDef ? '기본 손가락으로' : '부위 지우기';
+  $('rig-reset').disabled = !isDef && !RIG;
+  $('rig-note').textContent = !RIG
+    ? "아직 움직일 부위가 없어요. '움직일 부위 지정'을 누르고 화면에서 뿌리 → 끝으로 드래그하세요 (팔·귀·꼬리 등)."
+    : RIGDEF && RIGDEF.preset
+      ? "토끼 손가락에 뼈가 들어 있어요. 다른 부위를 움직이려면 '움직일 부위 지정'을 누르고 뿌리 → 끝으로 드래그하세요."
+      : "지정한 부위가 움직여요. 다시 지정하려면 '움직일 부위 지정'을 한 번 더 누르세요.";
+}
+
 async function rebuildStaged(step) {
   const tick = async (i, label) => { if (step) { step(i, label); await nextPaint(); } };
   await tick(1, '배경 지우는 중');
@@ -1156,7 +1330,7 @@ async function rebuildStaged(step) {
   G.u = poisson(G.gm, G.gw, G.gh);
   PREP = G;
   await tick(4, '아스키로 그리는 중');
-  MODEL = buildPoints(PREP, S.volume);
+  rebuildPoints();
   $('tol').disabled = hadAlpha;
   $('tol-note').textContent = hadAlpha
     ? '투명 배경 이미지라 지금은 쓰지 않아요. 배경이 있는 사진이면 가장자리 색을 기준으로 지워요.'
@@ -1185,12 +1359,13 @@ function bindRange(id, key, fmt, onChange) {
 let volTimer = 0;
 bindRange('volume', 'volume', (v) => v.toFixed(2), () => {
   clearTimeout(volTimer);
-  volTimer = setTimeout(() => { if (PREP) { MODEL = buildPoints(PREP, S.volume); dirty = true; } }, 30);
+  volTimer = setTimeout(() => { if (PREP) rebuildPoints(); }, 30);
 });
 bindRange('font', 'font', (v) => `${v}px`, () => layout());
 const zoomUI = bindRange('zoom', 'zoom', (v) => `${Math.round(v * 100)}%`);
 bindRange('light', 'light', (v) => `${v > 0 ? '+' : ''}${v}°`);
 bindRange('speed', 'speed', (v) => v.toFixed(2));
+bindRange('mspeed', 'mspeed', (v) => `${v.toFixed(2)}×`);
 let tolTimer = 0;
 bindRange('tol', 'tol', (v) => String(v), () => { clearTimeout(tolTimer); tolTimer = setTimeout(() => { if (SRC && !SRC.hadAlpha) rebuildStaged(null); }, 120); });
 
@@ -1214,6 +1389,7 @@ function bindChips(id, key, onChange) {
   });
 }
 bindChips('ramp', 'ramp', () => refreshAtlas());
+bindChips('motion', 'motion', () => { motionPhase = 0; if (S.motion !== 'off' && !RIG) toast("먼저 '움직일 부위 지정'으로 움직일 곳을 골라 주세요."); });
 bindChips('mode', 'mode');
 bindChips('theme', 'theme', () => { document.documentElement.dataset.render = S.theme; });
 
@@ -1228,9 +1404,83 @@ bindSwitch('auto', 'auto');
 bindSwitch('edges', 'edges');
 bindSwitch('glow', 'glow');
 
+/* part picking (front view, bone lies in the z = 0 plane) */
+function screenToModel(clientX, clientY) {
+  const r = canvas.getBoundingClientRect(), p = live.proj;
+  const cx = ((clientX - r.left) * LAY.dpr - LAY.offX) / LAY.cw, cy = ((clientY - r.top) * LAY.dpr - LAY.offY) / LAY.ch;
+  return [(cx - p.hw) / p.Sc, p.yc - (cy / p.aspect - p.hh) / p.Sc];
+}
+function modelToScreen(X, Y) {
+  const p = live.proj;
+  const cx = X * p.Sc + p.hw, cy = (-(Y - p.yc) * p.Sc + p.hh) * p.aspect;
+  return [(LAY.offX + cx * LAY.cw) / LAY.dpr, (LAY.offY + cy * LAY.ch) / LAY.dpr];
+}
+function showBone(a, b, ghost) {
+  const line = $('rig-line'), r0 = $('rig-root'), r1 = $('rig-tip');
+  if (!a || !b) { for (const [el, k] of [[line, 'x1'], [line, 'y1'], [line, 'x2'], [line, 'y2'], [r0, 'cx'], [r0, 'cy'], [r1, 'cx'], [r1, 'cy']]) el.setAttribute(k, -99); return; }
+  const A = modelToScreen(a[0], a[1]), Bp = modelToScreen(b[0], b[1]);
+  line.setAttribute('x1', A[0]); line.setAttribute('y1', A[1]); line.setAttribute('x2', Bp[0]); line.setAttribute('y2', Bp[1]);
+  r0.setAttribute('cx', A[0]); r0.setAttribute('cy', A[1]); r1.setAttribute('cx', Bp[0]); r1.setAttribute('cy', Bp[1]);
+  line.classList.toggle('ghost', !!ghost);
+}
+function enterRigEdit() {
+  if (!MODEL) return;
+  rigEdit.on = true; rigEdit.start = null; rigEdit.prevAuto = S.auto;
+  S.auto = false; $('auto').setAttribute('aria-checked', 'false');
+  V.yaw = Math.round(V.yaw / (2 * Math.PI)) * 2 * Math.PI; V.pitch = 0; V.vyaw = V.vpitch = 0;
+  if (RIG) applyRig(MODEL, RIG, 0, 'nod');
+  rigPosed = false;
+  stage.classList.add('editing'); $('edit-banner').classList.add('on'); $('rig-svg').classList.add('on');
+  $('rig-edit').textContent = '지정 취소';
+  draw();
+  if (RIG) showBone(RIG.B, RIG.T, true); else showBone(null);
+  stage.focus({ preventScroll: true });
+}
+function exitRigEdit() {
+  rigEdit.on = false; rigEdit.start = null;
+  S.auto = rigEdit.prevAuto; $('auto').setAttribute('aria-checked', String(S.auto));
+  stage.classList.remove('editing'); $('edit-banner').classList.remove('on'); $('rig-svg').classList.remove('on');
+  $('rig-edit').textContent = '움직일 부위 지정';
+  showBone(null);
+  dirty = true;
+}
+function finishRigEdit(end) {
+  const a = rigEdit.start;
+  rigEdit.start = null;
+  if (!a || Math.hypot(end[0] - a[0], end[1] - a[1]) < MODEL.dx * 6) { toast('조금 더 길게, 뿌리에서 끝까지 드래그해 주세요.'); if (RIG) showBone(RIG.B, RIG.T, true); else showBone(null); return; }
+  if (RIG) applyRig(MODEL, RIG, 0, 'nod');
+  const def = { b: modelToImg(MODEL, a[0], a[1]), t: modelToImg(MODEL, end[0], end[1]) };
+  const rig = buildRig(MODEL, PREP, def);
+  if (!rig) { toast('거기에는 움직일 부위가 없어요. 이미지 위에서 드래그해 주세요.'); if (RIG) showBone(RIG.B, RIG.T, true); else showBone(null); return; }
+  RIGDEF = def; RIG = rig;
+  MODEL.fit = fitWithRig(MODEL, RIG);
+  if (S.motion === 'off') { S.motion = 'nod'; syncUI(); }
+  motionPhase = 0; rigFlash = 1;
+  exitRigEdit();
+  updateRigNote();
+  toast('부위를 정했어요. 반짝이는 부분이 움직여요.');
+}
+$('rig-edit').addEventListener('click', () => (rigEdit.on ? exitRigEdit() : enterRigEdit()));
+$('rig-reset').addEventListener('click', () => {
+  if (!MODEL || !SRC) return;
+  if (rigEdit.on) exitRigEdit();
+  if (RIG) applyRig(MODEL, RIG, 0, 'nod');
+  RIGDEF = SRC.isDefault ? presetRig() : null;
+  RIG = buildRig(MODEL, PREP, RIGDEF);
+  MODEL.fit = RIG ? fitWithRig(MODEL, RIG) : fitExtent(MODEL);
+  rigPosed = false; motionPhase = 0; rigFlash = RIG ? 1 : 0;
+  updateRigNote(); dirty = true;
+});
+
 /* pointer + keys */
 stage.addEventListener('pointerdown', (e) => {
   if (e.target.closest && e.target.closest('.dock-wrap, button')) return;
+  if (rigEdit.on) {
+    stage.setPointerCapture(e.pointerId);
+    rigEdit.id = e.pointerId; rigEdit.start = screenToModel(e.clientX, e.clientY);
+    showBone(rigEdit.start, rigEdit.start, false);
+    return;
+  }
   stage.setPointerCapture(e.pointerId);
   drag.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (drag.pts.size === 2) {
@@ -1241,6 +1491,7 @@ stage.addEventListener('pointerdown', (e) => {
   V.vyaw = V.vpitch = 0;
 });
 stage.addEventListener('pointermove', (e) => {
+  if (rigEdit.on) { if (rigEdit.start && e.pointerId === rigEdit.id) showBone(rigEdit.start, screenToModel(e.clientX, e.clientY), false); return; }
   if (!drag.pts.has(e.pointerId)) return;
   drag.pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (drag.pts.size >= 2) {
@@ -1256,6 +1507,12 @@ stage.addEventListener('pointermove', (e) => {
   dirty = true;
 });
 const endDrag = (e) => {
+  if (rigEdit.on) {
+    if (rigEdit.start && e.pointerId === rigEdit.id) {
+      if (e.type === 'pointercancel') { rigEdit.start = null; showBone(null); } else finishRigEdit(screenToModel(e.clientX, e.clientY));
+    }
+    return;
+  }
   drag.pts.delete(e.pointerId);
   if (drag.pts.size === 0) drag.on = false;
   if (drag.pts.size < 2) drag.pinch0 = 0;
@@ -1268,7 +1525,7 @@ stage.addEventListener('wheel', (e) => {
   zoomUI.sync(); dirty = true;
 }, { passive: false });
 stage.addEventListener('dblclick', (e) => {
-  if (e.target.closest && e.target.closest('.dock-wrap')) return; V.yaw = VIEW0.yaw; V.pitch = VIEW0.pitch; V.vyaw = V.vpitch = 0; S.zoom = 1; zoomUI.sync(); dirty = true; });
+  if ((e.target.closest && e.target.closest('.dock-wrap')) || rigEdit.on) return; V.yaw = VIEW0.yaw; V.pitch = VIEW0.pitch; V.vyaw = V.vpitch = 0; S.zoom = 1; zoomUI.sync(); dirty = true; });
 stage.addEventListener('keydown', (e) => {
   if (e.target !== stage) return;
   const k = e.key;
@@ -1328,7 +1585,11 @@ function openModal(title, bodyEl, note, onSave) {
 function closeModal() { $('modal').classList.remove('on'); modalSave = null; stage.focus(); }
 $('modal-close').addEventListener('click', closeModal);
 $('modal').addEventListener('click', (e) => { if (e.target === $('modal')) closeModal(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('modal').classList.contains('on')) closeModal(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if ($('modal').classList.contains('on')) closeModal();
+  else if (rigEdit.on) exitRigEdit();
+});
 $('modal-save').addEventListener('click', async () => { if (modalSave) await modalSave(); });
 
 /* downloads capability */
@@ -1521,6 +1782,12 @@ function composeRGB(rc, atlasA, cw, ch, bg, out) {
 }
 
 let exporting = false;
+function exportPose(t, seconds) {
+  if (!RIG || !MODEL || S.motion === 'off') return;
+  const per = MOTION[S.motion].period / S.mspeed;
+  const cycles = Math.max(1, Math.round(seconds / per));
+  applyRig(MODEL, RIG, motionTheta(S.motion, t * cycles), S.motion);
+}
 function lockExports(on) { for (const id of ['dl-gif', 'dl-mp4', 'png']) $(id).disabled = on; }
 function btnLabel(btn, text) { const sp = btn.querySelector('span'); (sp || btn).textContent = text; }
 async function makeGif() {
@@ -1551,6 +1818,7 @@ async function makeGif() {
     // palette from a handful of frames
     const hist = new Uint32Array(32768);
     for (let s = 0; s < 6; s++) {
+      exportPose(s / 6, (FR * DELAY) / 100);
       renderCells(MODEL, rc, cols, rows, cw / ch, { yaw: yaw0 + (s / 6) * Math.PI * 2, pitch, zoom: S.zoom }, o);
       composeRGB(rc, atlasA, cw, ch, bg, rgb);
       for (let i = 0; i < W * H; i++) hist[((rgb[i * 3] >> 3) << 10) | ((rgb[i * 3 + 1] >> 3) << 5) | (rgb[i * 3 + 2] >> 3)]++;
@@ -1572,6 +1840,7 @@ async function makeGif() {
     out.push(0x21); out.push(0xff); out.push(11); str('NETSCAPE2.0'); out.push(3); out.push(1); u16(0); out.push(0);
     const idx = new Uint8Array(W * H);
     for (let f = 0; f < FR; f++) {
+      exportPose(f / FR, (FR * DELAY) / 100);
       renderCells(MODEL, rc, cols, rows, cw / ch, { yaw: yaw0 + (f / FR) * Math.PI * 2, pitch, zoom: S.zoom }, o);
       composeRGB(rc, atlasA, cw, ch, bg, rgb);
       for (let i = 0; i < W * H; i++) {
@@ -1655,6 +1924,7 @@ async function makeVideo() {
     const rc = makeRenderCtx(), o = opts();
     const yaw0 = V.yaw, pitch = V.pitch, zoom = S.zoom;
     const drawFrame = (f) => {
+      exportPose(f / N, N / FPS);
       renderCells(MODEL, rc, lay.cols, lay.rows, lay.aspect, { yaw: yaw0 + (f / N) * Math.PI * 2, pitch, zoom }, o);
       out.draw(rc, lay, o);
     };
