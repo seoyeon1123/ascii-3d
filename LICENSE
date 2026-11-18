@@ -20,6 +20,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-Note: the example bunny image bundled in index.html, ascii3d_terminal.py and
-assets/demo.gif is not covered by this license; its copyright belongs to its
-original creator.
+Note: the example bunny images (front and side views) bundled in index.html,
+ascii3d_terminal.py and assets/demo.gif are not covered by this license; their
+copyright belongs to their original creator.
