@@ -701,6 +701,90 @@ function refineBg(bg, L, A, B, w, h, rounds, keep = 0.25, keepFg = null) {
   return bg;
 }
 
+// line art whose outline has small gaps: seal the gaps by thickening the lines, flood the outside, then let the
+// outside creep back up to the real lines (only a few px, so it can't get in through a gap)
+function inkOf(rgba, thr) {
+  const { w, h, data } = rgba, n = w * h, ink = new Uint8Array(n);
+  for (let i = 0; i < n; i++) ink[i] = (0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]) / 255 < thr ? 1 : 0;
+  return ink;
+}
+function isLineArt(ink, w, h) {
+  const n = w * h;
+  let c = 0;
+  for (let i = 0; i < n; i++) c += ink[i];
+  if (c < n * 0.004 || c > n * 0.3) return false;
+  const Di = chamfer(ink, w, h);
+  let thin = 0;
+  for (let i = 0; i < n; i++) if (ink[i] && Di[i] <= 4.5) thin++;
+  return thin >= c * 0.6;
+}
+// distance from every pixel to the nearest line pixel (outside the picture counts as no line)
+function distToInk(ink, w, h) {
+  const n = w * h, D = new Float32Array(n), s2 = Math.SQRT2, BIG = 1e9;
+  for (let i = 0; i < n; i++) D[i] = ink[i] ? 0 : BIG;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x; if (!D[i]) continue;
+    let v = D[i];
+    if (x > 0) v = Math.min(v, D[i - 1] + 1);
+    if (y > 0) { v = Math.min(v, D[i - w] + 1); if (x > 0) v = Math.min(v, D[i - w - 1] + s2); if (x < w - 1) v = Math.min(v, D[i - w + 1] + s2); }
+    D[i] = v;
+  }
+  for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) {
+    const i = y * w + x; if (!D[i]) continue;
+    let v = D[i];
+    if (x < w - 1) v = Math.min(v, D[i + 1] + 1);
+    if (y < h - 1) { v = Math.min(v, D[i + w] + 1); if (x < w - 1) v = Math.min(v, D[i + w + 1] + s2); if (x > 0) v = Math.min(v, D[i + w - 1] + s2); }
+    D[i] = v;
+  }
+  return D;
+}
+
+function sealedOutline(rgba, r) {
+  const { w, h } = rgba, n = w * h;
+  const ink = inkOf(rgba, 0.42);
+  if (!isLineArt(ink, w, h)) return null;
+  const D = distToInk(ink, w, h);
+  const core = growFromBorder(w, h, (i) => D[i] > r, (p, q) => D[q] > r);
+  // creep back toward the lines, at most r + 2 steps
+  const bg = new Uint8Array(n), step = new Int16Array(n).fill(-1), q = new Int32Array(n);
+  let qh = 0, qt = 0;
+  for (let i = 0; i < n; i++) if (core[i]) { bg[i] = 1; step[i] = 0; q[qt++] = i; }
+  while (qh < qt) {
+    const i = q[qh++], x = i % w, y = (i / w) | 0, st = step[i];
+    if (st >= r + 2) continue;
+    for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
+      if (j < 0 || bg[j] || ink[j]) continue;
+      bg[j] = 1; step[j] = st + 1; q[qt++] = j;
+    }
+  }
+  // sealed pockets that show the background colour (between two ears, under an arm) open up again;
+  // the biggest pocket is the body and always stays
+  const { L, A, B } = labOf(rgba);
+  const ref = [[], [], []];
+  for (let i = 0; i < n; i += 7) if (bg[i]) { ref[0].push(L[i]); ref[1].push(A[i]); ref[2].push(B[i]); }
+  const med = (a) => { if (!a.length) return 0; a.sort((x, y) => x - y); return a[a.length >> 1]; };
+  const R0 = med(ref[0]), R1 = med(ref[1]), R2 = med(ref[2]);
+  const lab = new Int32Array(n), regs = [null];
+  for (let s0 = 0; s0 < n; s0++) {
+    if (bg[s0] || ink[s0] || lab[s0]) continue;
+    const id = regs.length, list = [s0];
+    lab[s0] = id;
+    let like = 0;
+    for (let t = 0; t < list.length; t++) {
+      const i = list[t], x = i % w, y = (i / w) | 0;
+      if (Math.hypot(L[i] - R0, A[i] - R1, B[i] - R2) <= 6) like++;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) if (j >= 0 && !bg[j] && !ink[j] && !lab[j]) { lab[j] = id; list.push(j); }
+    }
+    regs.push({ size: list.length, like: like / list.length });
+  }
+  let bigId = 0, big = 0;
+  for (let id = 1; id < regs.length; id++) if (regs[id].size > big) { big = regs[id].size; bigId = id; }
+  for (let i = 0; i < n; i++) { const id = lab[i]; if (id && id !== bigId && regs[id].like >= 0.7) bg[i] = 1; }
+  const fg = new Uint8Array(n);
+  for (let i = 0; i < n; i++) fg[i] = bg[i] ? 0 : 1;
+  return { fg, ink };
+}
+
 // keep the parts that matter: components at least 2% of the largest
 function dropSpecks(mask, w, h) {
   const n = w * h, lab = new Int32Array(n), q = new Int32Array(n), sizes = [0];
@@ -741,6 +825,16 @@ function computeMask(rgba, tol) {
   const bgOld = floodBorder(rgba, tol), old = new Uint8Array(n);
   for (let i = 0; i < n; i++) old[i] = bgOld[i] ? 0 : 1;
   dropSpecks(old, w, h);
+  // line art whose outline has gaps, on a background close to the body colour: the flood runs inside and leaves
+  // only the lines. Seal the gaps instead
+  const sealed = sealedOutline(rgba, Math.max(4, Math.round(Math.max(w, h) * 0.02)));
+  if (sealed) {
+    dropSpecks(sealed.fg, w, h);
+    const cs = cover(sealed.fg);
+    let inkIn = 0, oc = 0;
+    for (let i = 0; i < n; i++) if (old[i]) { oc++; inkIn += sealed.ink[i]; }
+    if (cs > 0.01 && cs < 0.95 && ((oc && inkIn / oc > 0.45) || cover(old) < cs * 0.7)) return { mask: sealed.fg, hadAlpha: false };
+  }
   const okOld = cover(old) > 0.01 && cover(old) < 0.985;
   const whole = () => ({ mask: new Uint8Array(n).fill(1), hadAlpha: false });
   // gradients, two-tone rooms, busy photos: learned background colours + colour models
